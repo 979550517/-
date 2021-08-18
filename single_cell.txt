@@ -1,0 +1,390 @@
+##liupinbo_liupinbo1999@163.com
+##version：1.0.0
+
+
+#加载所需要的包
+library(plyr)
+library(dplyr)
+library(SeuratObject)
+library(Seurat)
+
+
+setwd('D:/try/scRNA-seq')
+##读入C-194901数据
+C194901.data <- Read10X(data.dir = "C-194901_matrix")
+colnames(C194901.data) <- paste('C194901', colnames(C194901.data), sep = '_')
+##创建Seurat对象与数据过滤
+C194901<- CreateSeuratObject(counts =  C194901.data, project = "C194901", min.cells = 3, min.features = 200)
+##读入C202801数据
+C202801.data <- Read10X(data.dir = "C-202801_matrix")
+colnames(C202801.data) <- paste('C202801', colnames(C202801.data), sep = '_')
+##创建Seurat对象与数据过滤
+C202801<- CreateSeuratObject(counts =  C202801.data, project = "c202801", min.cells = 3, min.features = 200)
+##读入C-324301数据
+N324301.data <- Read10X(data.dir = "N-324301_matrix")
+colnames(N324301.data) <- paste('N324301', colnames(N324301.data), sep = '_')
+##创建Seurat对象与数据过滤
+N324301<- CreateSeuratObject(counts =  N324301.data, project = "N324301", min.cells = 3, min.features = 200)
+##读入N-202801数据
+N202801.data <- Read10X(data.dir = "N-202801_matrix")
+colnames(N202801.data) <- paste('N202801', colnames(N202801.data), sep = '_')
+N202801<- CreateSeuratObject(counts =  N202801.data, project = "N202801", min.cells = 3, min.features = 200)
+####4个样进行合并
+merged1<-merge(C194901,c(C202801,N324301,N202801))
+
+
+##计算每个细胞的线粒体基因转录本数的百分比（%）,使用[[ ]] 操作符存放到metadata中
+merged1[["percent.mt"]] <- PercentageFeatureSet(merged1, pattern = "^MT-")
+##展示基因及线粒体百分比(nFeature代表每个细胞测到的基因数目，nCount代表每个细胞测到所有基因的表达量之和，percent.mt代表测到的线粒体基因的比例)
+VlnPlot(merged1, features = c("nFeature_RNA", "nCount_RNA", "percent.mt"), ncol = 3)
+#y.max=100通过调整y.max更好的展示线粒体数量分布
+VlnPlot(merged1, features = "percent.mt",y.max=100)
+plot1 <- FeatureScatter(merged1, feature1 = "nCount_RNA", feature2 = "percent.mt")
+plot2 <- FeatureScatter(merged1, feature1 = "nCount_RNA", feature2 = "nFeature_RNA")
+show(plot1)
+show(plot2)
+CombinePlots(plots = list(plot1, plot2))
+##过滤细胞：保留gene数大于200小于5000的细胞；目的是去掉空GEMs和1个GEMs包含2个以上细胞的数据；而保留线粒体基因的转录本数低于25%的细胞,为了过滤掉死细胞等低质量的细胞数据。
+merged <- subset(merged1, subset = nFeature_RNA > 200 & nFeature_RNA < 5000 & percent.mt < 25)
+##表达量数据标准化,LogNormalize的算法：A = log( 1 + ( UMIA ÷ UMITotal ) × 10000 )
+merged <- NormalizeData(merged, normalization.method = "LogNormalize", scale.factor = 10000)
+#merged <- NormalizeData(merged) 或者用默认的
+##鉴定表达高变基因(2000个）,用于下游分析,如PCA；
+merged <- FindVariableFeatures(merged, selection.method = "vst", nfeatures = 2000)
+##提取表达量变变化最高的10个基因；
+top10 <- head(VariableFeatures(merged), 10)
+plot1 <- VariableFeaturePlot(merged)
+plot2 <- LabelPoints(plot = plot1, points = top10)
+show(plot1)
+show(plot2)
+CombinePlots(plots = list(plot1, plot2))
+##出现无法分配大小为xx的矢量时跑一下这个,垃圾电脑建议跑一下，虽然会很卡
+memory.limit(1000000)
+##而对所有基因进行标准化的方法如下：
+all.genes <- rownames(merged)
+merged <- ScaleData(merged, features = all.genes)
+merged <- ScaleData(merged, vars.to.regress = "percent.mt")
+##线性降维（PCA）,默认用高变基因集,但也可通过features参数自己指定；
+merged <- RunPCA(merged, features = VariableFeatures(object = merged))
+##检查PCA分群结果, 这里只展示前5个PC,每个PC只显示5个基因；
+print(merged[["pca"]], dims = 1:5, nfeatures = 5)
+##展示主成分基因分值
+VizDimLoadings(merged, dims = 1:2, reduction = "pca")
+##绘制pca散点图
+DimPlot(merged, reduction = "pca")
+##画第1个或15个主成分的热图；
+DimHeatmap(merged, dims = 1, cells = 500, balanced = TRUE)
+DimHeatmap(merged, dims = 1:15, cells = 500, balanced = TRUE)
+
+
+#肘部图（碎石图）,基于每个主成分对方差解释率的排名。
+ElbowPlot(merged, ndims = 50)
+##分群个数这里选择50,建议尝试选择多个主成分个数做下游分析,对整体影响不大；在选择此参数时,建议选择偏高的数字（为了获取更多的稀有分群,“宁滥勿缺”）；有些亚群很罕见,如果没有先验知识,很难将这种大小的数据集与背景噪声区分开来。
+##非线性降维（UMAP/tSNE)基于PCA空间中的欧氏距离计算nearest neighbor graph,优化任意两个细胞间的距离权重（输入上一步得到的PC维数）。
+merged <- FindNeighbors(merged, dims = 1:20)
+##接着优化模型,resolution参数决定下游聚类分析得到的分群数,对于3K左右的细胞,设为0.4-1.2 能得到较好的结果(官方说明)；如果数据量增大,该参数也应该适当增大。
+merged <- FindClusters(merged, resolution = 0.1)
+##使用Idents（）函数可查看不同细胞的分群；
+head(Idents(merged), 5)
+##Seurat提供了几种非线性降维的方法进行数据可视化（在低维空间把相似的细胞聚在一起）,比如UMAP和t-SNE,运行UMAP需要先安装'umap-learn'包,这里不做介绍。
+merged <- RunUMAP(merged,dims = 1:20)
+##用DimPlot()函数绘制散点图,reduction = "tsne",指定绘制类型；如果不指定,默认先从搜索 umap,然后 tsne, 再然后 pca；也可以直接使用这3个函数PCAPlot()、TSNEPlot()、UMAPPlot()； cols,pt.size分别调整分组颜色和点的大小；
+#分组信息
+merged@meta.data$new_group <- mapvalues(merged@meta.data$orig.ident,from = c("C194901","C202801","N202801","N324301"), to=c("C","C","N","N"))
+#未注释分群的整体图
+DimPlot(merged,reduction = "umap",label = TRUE,pt.size = 1.5)
+#分样本为单位的未注释图(分四幅图)
+plot1<-DimPlot(subset(merged, subset = orig.ident=='C194901'),reduction = "umap",label = TRUE,pt.size = 1.5)
+plot2<-DimPlot(subset(merged, subset = orig.ident=='C202801'),reduction = "umap",label = TRUE,pt.size = 1.5)
+plot3<-DimPlot(subset(merged, subset = orig.ident=='N324301'),reduction = "umap",label = TRUE,pt.size = 1.5)
+plot4<-DimPlot(subset(merged, subset = orig.ident=='N202801'),reduction = "umap",label = TRUE,pt.size = 1.5)
+show(plot1)
+show(plot2)
+show(plot3)
+show(plot4)
+CombinePlots(plots = list(plot1, plot2, plot3, plot4))
+#分样本为单位的未注释图(一幅图)
+DimPlot(merged,reduction = "umap",label = TRUE,group.by="orig.ident",pt.size = 1.5)
+#分对照和实验的两组的未注释图
+DimPlot(merged, reduction = "umap",label = TRUE,pt.size = 1,split.by="new_group",ncol=2)
+
+
+##寻找每一cluster的marker
+merged.markers <- FindAllMarkers(merged, only.pos = TRUE, min.pct = 0.25, logfc.threshold = 0.25)
+merged.markers %>% group_by(cluster) %>% top_n(n = 2, wt = avg_log2FC)
+##存储marker
+write.table(merged.markers,file="allmarker.txt",sep="\t")
+
+
+####查找每个群是什么细胞
+#上皮细胞 epithelial
+FeaturePlot(merged, features = "EPCAM")
+#内皮细胞 endothelial
+FeaturePlot(merged, features = "PECAM1")
+#成纤维细胞 fibroblasts
+FeaturePlot(merged, features = "COL3A1")
+#髓系细胞 myeloid
+FeaturePlot(merged, features = c("CD163","AIF1"))
+#浆细胞 plasma cell
+FeaturePlot(merged, features = "JCHAIN")
+
+#免疫细胞
+FeaturePlot(merged, features = "PTPRC")
+#B细胞
+FeaturePlot(merged, features = "CD79A")
+#T细胞
+FeaturePlot(merged, features = c("CD3D","CD8A","CD4"))
+#NK细胞
+FeaturePlot(merged, features = c("GNLY","NKG7"))
+
+##平滑肌细胞
+FeaturePlot(merged, features = c("ACTA2", "DES"))
+##树突状细胞
+FeaturePlot(merged, features = c("CD83","CD80","CD86","CLEC9A","CD68",'CLEC4C', 'IL3RA', 'NRP1','ADAM19', 'B220'))
+##中性粒细胞
+FeaturePlot(merged, features = c('CXCL8', 'FCGR3B', 'MNDA'))
+##淋巴细胞
+FeaturePlot(merged, features = c('SIGLEC12','CD4', 'CD8A',' CD2', 'CD4', 'CD8A','DNTT'))
+##嗜酸性
+FeaturePlot(merged, features = c('CD11b', 'CD44', 'CD48', 'CD54', 'CD69', 'CD81', 'HLA-DR'))
+##碱性粒细胞
+FeaturePlot(merged, features = c( 'CD63', 'CD69', 'CD19', 'CD22'))
+##尿路上皮
+FeaturePlot(merged, features = c('Pancytokeratin', 'Uroplakin III', 'UGP85','DHRS2', 'KRT5', 'PVRL4', 'S100P', 'TP63', 'UPK1B'))
+
+#Naive CD4+T
+FeaturePlot(merged, features = c("IL7R","CCR7"))
+#Memory CD4+
+FeaturePlot(merged, features = c("IL7R","S100A4"))
+#CD14+ Mono
+FeaturePlot(merged, features = c("CD14","LYZ"))
+#B细胞
+FeaturePlot(merged, features = "MS4A1")
+#CD8+ T
+FeaturePlot(merged, features = "CD8A")
+#FCGR3A+ Mono
+FeaturePlot(merged, features = c("FCGR3A","MS4A7"))
+#NK
+FeaturePlot(merged, features = c("GNLY","NKG7"))
+#DC
+FeaturePlot(merged, features = c("FCER1A","CST3"))
+#Platelet
+FeaturePlot(merged, features = "PPBP")
+#不能确定的就用marker文件中的基因上网站cellmarker进行检索
+
+##每个cluster按照marker规定细胞类型
+new.cluster.ids <- c('epithelial cell', 'basal cell', 'fibroblasts', 'T lymphocytes', 'plasma cell', 'smooth muscle cell', 'monocytes', 'B lymphocytes', 'endothelial cell','mast cell')
+names(new.cluster.ids) <- levels(merged)
+merged <- RenameIdents(merged, new.cluster.ids)
+library(ggplot2)
+mytheme <- theme_bw() +
+  theme(axis.line=element_blank(),
+        axis.text.x=element_blank(),
+        axis.text.y=element_blank(),
+        axis.ticks=element_blank(),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        legend.position = "right",aspect.ratio = 1)
+##分对照和实验的两组的注释图
+DimPlot(merged, reduction = "umap", label = FALSE, split.by="new_group",pt.size = 1)
+
+
+#利用cell-type分样本绘制占比图
+write.table(Idents(merged),"cell-type.xls",sep="\t",quote = F)
+
+##按照细胞类型绘制气泡图
+top1 <- merged.markers %>% group_by(cluster) %>% top_n(n = 1, wt = avg_log2FC)
+DotPlot(merged, features = top1$gene,cols = c("blue", "red"))
+
+##绘制分cluster的热图
+top5 <- merged.markers %>% group_by(cluster) %>% top_n(n = 5, wt = avg_log2FC)
+DoHeatmap(merged, features = top5$gene,group.by = "new_group",angle = 0) + NoLegend()#两组
+DoHeatmap(merged, features = top5$gene,group.by = "orig.ident",angle = 0) + NoLegend()#四个样本
+DoHeatmap(merged, features = top5$gene,angle =90) + NoLegend()#注释的分群热图
+##绘制RidgePlot(基因自己换)
+RidgePlot(merged, features = c("LYZ", "CD79A", "CD3E", "MS4A1"), ncol = 2)
+
+###count文件生成
+count_raw <- merged[["RNA"]]@counts
+count_norm <- apply(count_raw, 2, function(x) (x/sum(x))*10000)
+write.table(count_norm, 'cellphonedb_count.txt', sep ='\t', quote = F)
+
+###meta文件生成
+write.table(Idents(merged),"cellphonedb_meta.txt",sep="\t",quote = F)
+
+############取出各cluster用来亚分群
+sub_merged<-subset(merged, idents = 'epithelial cell')
+sub_merged<-subset(merged, idents = 'monocytes')
+sub_merged<-subset(merged, idents = 'endothelial cell')
+sub_merged<-subset(merged, idents = 'basal cell')
+sub_merged<-subset(merged, idents = 'fibroblasts')
+sub_merged<-subset(merged, idents = 'T lymphocytes')
+sub_merged<-subset(merged, idents = 'plasma cell')
+sub_merged<-subset(merged, idents = 'smooth muscle cell')
+sub_merged<-subset(merged, idents = 'mast cell')
+sub_merged<-subset(merged, idents = 'B lymphocytes')
+##查看一下取出来的这个群
+DimPlot(sub_merged, reduction = "umap",label = TRUE, pt.size = 2)
+
+##########对取出的cluster重新进行分群
+sub_merged <- FindVariableFeatures(sub_merged, selection.method = "vst", nfeatures = 2000)
+all.genes <- rownames(sub_merged)
+sub_merged <- ScaleData(sub_merged, features = all.genes)
+sub_merged <- ScaleData(sub_merged, vars.to.regress = "percent.mt")
+sub_merged <- RunPCA(sub_merged, features = VariableFeatures(object = sub_merged))
+sub_merged <- FindNeighbors(sub_merged, dims = 1:10)
+sub_merged@meta.data$new_group <- mapvalues(sub_merged@meta.data$orig.ident,from = c("C194901","C202801","N202801","N324301"), to=c("C","C","N","N"))
+##绘制Marker基因的小提琴图
+VlnPlot(sub_merged, features = c("CD320", "CLU","IGHA2"),group.by = "new_group")
+sub_merged <- FindClusters(sub_merged, resolution = 0.1)
+sub_merged <- RunTSNE(sub_merged, dims = 1:10)
+#未注释的聚类
+DimPlot(sub_merged, reduction = "tsne",label = TRUE, pt.size = 1.5)
+plot1<-DimPlot(subset(sub_merged, subset = orig.ident=='C194901'),reduction = "tsne",label = TRUE,pt.size = 1.5)
+plot2<-DimPlot(subset(sub_merged, subset = orig.ident=='C202801'),reduction = "tsne",label = TRUE,pt.size = 1.5)
+plot3<-DimPlot(subset(sub_merged, subset = orig.ident=='N202801'),reduction = "tsne",label = TRUE,pt.size = 1.5)
+plot4<-DimPlot(subset(sub_merged, subset = orig.ident=='N324301'),reduction = "tsne",label = TRUE,pt.size = 1.5)
+CombinePlots(plots = list(plot1, plot2, plot3, plot4))
+#分样本个体的聚类
+DimPlot(sub_merged,reduction = "tsne",label = TRUE,group.by="orig.ident",pt.size = 1.5)
+#分对照和实验的两组的未注释图注意group和split的用法
+DimPlot(sub_merged,reduction = "tsne",label = TRUE,group.by="new_group",pt.size = 2)
+
+##寻找每一cluster的marker
+sub_merged.markers <- FindAllMarkers(sub_merged, only.pos = TRUE, min.pct = 0.25, logfc.threshold = 0.25)
+sub_merged.markers %>% group_by(cluster) %>% top_n(n = 2, wt = avg_log2FC)
+
+##存储marker
+write.table(sub_merged.markers,file="sub_merged.txt",sep="\t")
+
+##按照细胞类型绘制分cluster的热图
+top5 <- sub_merged.markers %>% group_by(cluster) %>% top_n(n = 5, wt = avg_log2FC)
+DoHeatmap(sub_merged, features = top5$gene,group.by = "new_group") + NoLegend()
+#分聚类群的热图
+DoHeatmap(sub_merged, features = top5$gene) + NoLegend()
+#分聚类群的各个基因的小提琴图
+VlnPlot(sub_merged, features = c("RPL38", "RPL39"))
+
+
+#注释分群(虽然还没)
+new.cluster.ids <- c('one', 'two', 'three')
+names(new.cluster.ids) <- levels(sub_merged)
+sub_merged <- RenameIdents(sub_merged, new.cluster.ids)
+library(ggplot2)
+mytheme <- theme_bw() +
+  theme(axis.line=element_blank(),
+        axis.text.x=element_blank(),
+        axis.text.y=element_blank(),
+        axis.ticks=element_blank(),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        legend.position = "right",aspect.ratio = 1)
+##分群未注释图
+DimPlot(sub_merged, reduction = "tsne", label = FALSE, pt.size = 1)
+
+
+####提取sub_merged中的cluster1
+C1_sub_merged<-subset(sub_merged, idents = 'one')
+C1_sub_merged@meta.data$sample_type <- paste(C1_sub_merged@meta.data$orig.ident, C1_sub_merged@meta.data$RNA_snn_res.0.5, sep = "_")
+head(C1_sub_merged@meta.data)
+write.table(C1_sub_merged@meta.data,file="C1_sub_merged.txt",sep="\t")
+
+####提取sub_merged中的cluster2
+C2_sub_merged<-subset(sub_merged, idents = 'two')
+C2_sub_merged@meta.data$sample_type <- paste(C2_sub_merged@meta.data$orig.ident, C2_sub_merged@meta.data$RNA_snn_res.0.5, sep = "_")
+head(C2_sub_merged@meta.data)
+write.table(C2_sub_merged@meta.data,file="C2_sub_merged.txt",sep="\t")
+
+
+####提取sub_merged中的cluster3
+C3_sub_merged<-subset(sub_merged, idents = 'three')
+C3_sub_merged@meta.data$sample_type <- paste(C3_sub_merged@meta.data$orig.ident, C3_sub_merged@meta.data$RNA_snn_res.0.5, sep = "_")
+head(C3_sub_merged@meta.data)
+write.table(C3_sub_merged@meta.data,file="C3_sub_merged.txt",sep="\t")
+
+#生成某种细胞的相关资料
+sub_merged<-subset(merged, idents = 'endothelial cell')
+sub_merged@meta.data$sample_type <- paste(sub_merged@meta.data$orig.ident, sub_merged@meta.data$RNA_snn_res.0.5, sep = "_")
+head(sub_merged@meta.data)
+write.table(sub_merged@meta.data,file="sub_merged.txt",sep="\t")
+
+sub_marker<-FindMarkers(sub_merged, group.by="new_group",ident.1 = "C", ident.2 = "N", logfc.threshold = 0.25, min.pct = 0.25)
+write.table(sub_marker,file="sub_endothelialmarker.txt",sep="\t")
+
+sub_marker<-read.csv(file.choose())
+library(ggplot2)
+cut_off_pvalue = 0.01
+cut_off_logFC = 1
+sub_marker$change = ifelse(sub_marker$p_val < cut_off_pvalue & abs(sub_marker$avg_log2FC) >= cut_off_logFC,
+                        ifelse(sub_marker$avg_log2FC> cut_off_logFC ,'Up','Down'),
+                        'Stable')
+p<-ggplot(
+  #设置数据
+  sub_marker,
+  aes(x = avg_log2FC,
+      y = -log10(p_val),
+      colour=change),label=colnames(sub_marker)) +
+  geom_point(alpha=0.4, size=3.5) +
+  scale_color_manual(values=c("#D6604D", "#d2dae2","#4393C3"))+
+
+  # 辅助线
+  geom_vline(xintercept=c(-1,1),lty=4,col="black",lwd=0.8) +
+  geom_hline(yintercept = -log10(cut_off_pvalue),lty=4,col="black",lwd=0.8) +
+
+  # 坐标轴
+  labs(x="log2(fold change)",
+       y="-log10 (p-value)")+
+  theme_bw()+
+
+  # 图例
+  theme(plot.title = element_text(hjust = 0.5),
+        legend.position="right")
+
+library(ggrepel)
+p + geom_text_repel(data=sub_marker,
+                    aes(label=rownames(sub_marker)))
+
+##富集分析
+metascape网站
+
+
+#基因差异表达热图
+library(pheatmap)#载入所需包，没有安装的需要先安装
+setwd("D:\\kwkx")         #设置工作目录
+data=read.table("input.txt",sep="\t",header=T,check.names=F)#读取输入文件
+rownames(data)=data[,1]
+data=data[,-1]
+exp=log2(data+0.01)##以2为底取log
+
+pdf(file="heatmap1.pdf",height=8,width=5)##根据所绘制热图的大小，调整长和宽
+pheatmap(exp,
+         color = colorRampPalette(c("green", "black", "red"))(50),
+         cluster_cols =F,####如果需要对行也不进行聚类，可添加cluster_rows =F
+         show_colnames = T,##也可不显示列名
+         show_rownames = T,##也可不显示行名
+         fontsize = 12,
+         fontsize_row=5)
+dev.off()
+
+
+library(pheatmap)
+setwd("D:\\kwkx")           #设置工作目录
+data=read.table("input.txt",sep="\t",header=T,check.names=F)#读取输入文件
+rownames(data)=data[,1]
+data=data[,-1]
+exp=log2(data+0.01)
+
+label=c(rep("WT",4),rep("HOM",4))###根据实际情况设定标签
+names(label)=colnames(exp)
+label=as.data.frame(label)
+
+pdf(file="heatmap2.pdf",height=8,width=5)
+pheatmap(exp,
+         annotation=label, ###对样本在上方加标签
+         color = colorRampPalette(c("green", "black", "red"))(50),
+         cluster_cols =F,
+         show_colnames = T,
+         show_rownames = T,
+         fontsize = 12,
+         fontsize_row=5)
+dev.off()

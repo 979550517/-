@@ -1,0 +1,110 @@
+##liupinbo_liupinbo1999@163.com
+##version：1.0.0
+
+library(ggplot2)
+library(ggrepel)
+library(EnhancedVolcano)
+matrix_zx <- read_delim("transcriptome/result/matrix.txt",
+                        delim = "\t", escape_double = FALSE, trim_ws = TRUE)
+
+list2 = c('ENSG00000103274','ENSG00000118564','ENSG00000244045','ENSG00000168509',
+         'ENSG00000023330','ENSG00000158578','ENSG00000136003','ENSG00000092096',
+         'ENSG00000165060','ENSG00000108010','ENSG00000138449','ENSG00000197150',
+         'ENSG00000164039','ENSG00000153162','ENSG00000047457','ENSG00000089472',
+         'ENSG00000012223','ENSG00000131507','ENSG00000148346','ENSG00000113249',
+         'ENSG00000168079','ENSG00000162769','ENSG00000118777','ENSG00000071967',
+         'ENSG00000211584','ENSG00000076351','ENSG00000123384','ENSG00000177575',
+         'ENSG00000119686','ENSG00000104635','ENSG00000138821','ENSG00000110911',
+         'ENSG00000147454','ENSG00000110169','ENSG00000178752','ENSG00000187045',
+         'ENSG00000105697','ENSG00000018280','ENSG00000086232','ENSG00000157214',
+         'ENSG00000010704','ENSG00000107611','ENSG00000072274','ENSG00000106327',
+         'ENSG00000100292','ENSG00000103415','ENSG00000164647','ENSG00000115107',
+         'ENSG00000127954','ENSG00000131269','ENSG00000135776','ENSG00000115657',
+         'ENSG00000164466','ENSG00000156398','ENSG00000107819','ENSG00000183605',
+         'ENSG00000144040','ENSG00000071553','ENSG00000155287','ENSG00000122729',
+         'ENSG00000136381','ENSG00000167996','ENSG00000087086','ENSG00000266412',
+         'ENSG00000169564','ENSG00000197111','ENSG00000132446','ENSG00000091513',
+         'ENSG00000181867','ENSG00000066926')
+EnhancedVolcano(matrix_zx,lab = matrix_zx$id,x = 'log2FoldChange',y = 'padj',
+pCutoff = 0.05,FCcutoff = 2,selectLab = list2)
+
+
+
+BiocManager::install("org.Hs.eg.db")
+install.packages('tidyverse')
+library(org.Hs.eg.db)
+library(tidyverse)
+columns(org.Hs.eg.db)
+keytypes(org.Hs.eg.db)
+select(org.Hs.eg.db,keys = '10',columns = c('SYMBOL'))
+dplyr::select(org.Hs.eg.db,`keys<-`('ENSG00000158578	'),columns(cols),keytypes('ENSEMBL'))
+merge_matrix <- matrix_zx %>% left_join(GO_out,by = c('id'='id'))
+
+
+
+rich_GO
+colnames(matrix_zx)
+gene <- dplyr::filter(matrix_zx,abs(log2FoldChange) > 2 & padj < 0.05) %>% pull(id)
+library(clusterProfiler)
+library(org.Hs.eg.db)
+ego <- enrichGO(
+  gene = gene,
+  OrgDb = org.Hs.eg.db,
+  keyType = 'ENSEMBL',
+  pvalueCutoff = 0.05,
+  qvalueCutoff = 0.05
+)
+
+barplot(ego,showCategory = 10)
+enrichplot::dotplot(ego)
+genelist <- matrix_zx$log2FoldChange
+names(genelist)<-matrix_zx$id
+genelist<-sort(genelist,decreasing = T)
+
+ego_df <- as.data.frame(ego)
+
+
+
+path<-bitr(matrix_zx$id,
+     fromType = 'ENSEMBL',
+     toType = 'ENTREZID',
+     OrgDb = org.Hs.eg.db
+     ) %>%
+left_join(matrix_zx,by = c('ENSEMBL'='id')) %>%
+  distinct(ENTREZID,.keep_all = TRUE)
+#distinct:dplyr包
+gene_path<-filter(path1,log2FoldChange>2 & padj < 0.05) %>%
+  pull(ENTREZID)
+genelist2 <- path1$log2FoldChange
+names(genelist2)<-path1$ENTREZID
+genelist2<-sort(genelist2,decreasing = T)
+ekp<-enrichKEGG(
+  gene = gene_path,
+  organism = 'hsa',
+  keyType = 'kegg',
+  pvalueCutoff = 0.05,
+  qvalueCutoff = 0.05
+)
+ekp<-setReadable(ekp,OrgDb = org.Hs.eg.db,keyType = 'ENTREZID')
+ekp_df <- as.data.frame(ekp)
+barplot(ekp,showCategory = 10)
+enrichplot::dotplot(ekp)
+
+
+temp<-bitr(matrix_zx$id,
+     fromType = 'ENSEMBL',
+     toType = 'SYMBOL',
+     OrgDb = org.Hs.eg.db
+)
+matrix2<-left_join(x = matrix_zx,y = temp,by = c('id'='ENSEMBL'))
+write.table(matrix3,file = 'G:/Rstudio_work/transcriptome/result/matrix2.xls',
+sep='\t',quote=FALSE,row.names = FALSE,col.names = TRUE) 
+
+select(matrix2,keys = list2)
+
+
+
+
+geneup <- dplyr::filter(target_gene_data,log2FoldChange > 1 & padj < 0.05) %>% pull(id)
+genedown <- dplyr::filter(target_gene_data,log2FoldChange < -1 & padj < 0.05) %>% pull(id)
+genenot <- dplyr::filter(target_gene_data,abs(log2FoldChange) < 1 | padj > 0.05) %>% pull(id)

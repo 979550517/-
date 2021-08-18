@@ -1,0 +1,23 @@
+##liupinbo_liupinbo1999@163.com
+##version：1.0.0
+
+
+options(stringsAsFactors = F) 
+library(maftools)
+library(dplyr)
+project='TCGA_LUAD'
+laml = read.maf(maf = 'G:/湘雅/突变/0458c57f-316c-4a7c-9294-ccd11c97c2f9/TCGA.LUAD.mutect.0458c57f-316c-4a7c-9294-ccd11c97c2f9.DR-10.0.somatic.maf.gz')
+maf_df = laml@data
+save(lam_target,maf_tg_df,file = "maf.Rdata")
+#有多少病人
+length(unique(maf_df$Tumor_Sample_Barcode))
+#有多少突变信息
+length(unique(maf_df$Hugo_Symbol))
+getSampleSummary(laml) 
+getGeneSummary(laml) 
+getFields(laml)  
+plotmafSummary(maf = lam_target, rmOutlier = TRUE,showBarcodes = FALSE,
+               addStat = 'median', dashboard = TRUE, titvRaw = FALSE)
+oncoplot(maf = laml, top = 80, fontSize = 0.5,titleFontSize = 5,bgCol = '#ffffff')
+laml.titv = titv(maf = lam_target, plot = FALSE, useSyn = TRUE)
+plotTiTv(res = laml.titv)
