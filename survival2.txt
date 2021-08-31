@@ -1,0 +1,133 @@
+##liupinbo_liupinbo1999@163.com
+##version：1.0.0
+
+####GEO数据矩阵与临床数据合并
+###geo<-t(read.table(file = "G:/湘雅/陆/GEO/GSE157010/matrix_symbol.xls",sep="\t",row.names=1))
+###meta<-data.frame(t(read.table(file = "G:/湘雅/陆/GEO/GSE157010/meta.xls",sep="\t",row.names=1)))
+merge_geo<-data.frame(sample = geo[,1])
+merge_geo<-left_join(merge_geo,meta,by=c("sample"="sample_id"))
+merge_geo2<-cbind(merge_geo,geo[,2:ncol(geo)])
+write.table(merge_geo2,file = 'G:/湘雅/陆/GEO/GSE157010/merge_GSE157010.txt',
+            sep='\t',quote=FALSE,row.names = FALSE,col.names = TRUE)
+####提取目标基因数据
+######G:/湘雅/陆/GEO/GSE157010/merge_GSE157010.txt
+GDA<-merge_geo2[,"GDA"]
+CYP2S1<-merge_geo2[,"CYP2S1"]
+UGT1A8.1<-merge_geo2[,"UGT1A1 /// UGT1A10 /// UGT1A4 /// UGT1A6 /// UGT1A8 /// UGT1A9"]
+UGT1A8.2<-merge_geo2[,"UGT1A1 /// UGT1A10 /// UGT1A3 /// UGT1A4 /// UGT1A5 /// UGT1A6 /// UGT1A7 /// UGT1A8 /// UGT1A9"]
+UGT1A8.3<-merge_geo2[,"UGT1A1 /// UGT1A3 /// UGT1A5 /// UGT1A8 /// UGT1A9"]
+PTGES<-merge_geo2[,"PTGES"]
+target_gene_matrix<-cbind(sample_id=merge_geo2[,1],
+                          merge_geo2[,2:6],
+                          GDA=GDA,
+                          CYP2S1=CYP2S1,
+                          UGT1A8.1=UGT1A8.1,
+                          UGT1A8.2=UGT1A8.2,
+                          UGT1A8.3=UGT1A8.3,
+                          PTGES=PTGES)
+write.table(target_gene_matrix,file = 'G:/湘雅/陆/GEO/GSE157010/target_gene_GSE157010.xls',
+            sep='\t',quote=FALSE,row.names = FALSE,col.names = TRUE)
+####去批次效应
+######geo<-read.table(file = "G:/湘雅/陆/GEO/GSE157010/target_gene_GSE157010.xls",header=T,sep="\t",row.names=1)
+######geo:G:/湘雅/陆/GEO/GSE157010/target_gene_GSE157010.xls
+######tcga<-read.table(file = "G:/湘雅/陆/analyes_FPKM/cox_DE_exp.xls",header=T,sep="\t")
+######tcga:G:/湘雅/陆/analyes_FPKM/cox_DE_exp.xls
+#library(sva)
+merge<-t(rbind(tcga[,12:15],geo[,6:9]))
+bathtype=c(rep(1,nrow(tcga)),rep(2,nrow(geo)))
+outTab<-ComBat(merge,bathtype,par.prior = T)
+tcga_out<-t(outTab[,1:327])
+geo_out<-t(outTab[,328:ncol(outTab)])
+tcga_out<-cbind(tcga[,1:11],tcga_out)
+geo_out<-cbind(geo[,1:5],geo_out)
+write.table(tcga_out,file = "G:/湘雅/陆/new_modle_GSE157010/tcga_adj.xls",col.names=T,sep="\t",
+            row.names=F,quote=F)
+write.table(geo_out,file = "G:/湘雅/陆/new_modle_GSE157010/geo_adj.xls",col.names=T,sep="\t",
+            row.names=T,quote=F)
+####tcga数据导入及geo数据导入
+########G:/湘雅/陆/new_modle_GSE157010
+#tcga_out<-read.table(file = "G:/湘雅/陆/new_modle_GSE157010/tcga_adj.xls",sep="\t",header=T)
+########tcga:tcga_adj.xls
+#geo_out<-read.table(file = "G:/湘雅/陆/new_modle_GSE157010/geo_adj.xls",sep="\t",header=T,row.names=1)
+########geo:geo_adj.xls
+####tcga模型构建及geo数据测试
+library(glmnet)
+library(survival)
+x=as.matrix(tcga_out[,12:ncol(tcga_out)])
+y=data.matrix(Surv(tcga_out$last_followup,tcga_out$event))
+fit=glmnet::glmnet(x,y,family = "cox",maxit = 1000)
+cvfit=glmnet::cv.glmnet(x,y,family = "cox",maxit = 1000)
+coef=coef(fit,s=cvfit$lambda.min)
+actCoef<-coef[,1]  ###向量，列表
+lassoGene=row.names(coef)
+geneCoef=cbind(Gene=lassoGene,Coef=actCoef)
+trainFinalGeneExp=tcga_out[,lassoGene]
+myfun<- function(x) {
+  crossprod(as.numeric(x),actCoef)
+}
+trainScore=apply(trainFinalGeneExp,1,myfun)
+outCol=c("sample","V1","last_followup","event",lassoGene)
+risk<-as.vector(ifelse(trainScore>median(trainScore),"high","low"))
+outTab=cbind(tcga_out[,outCol],riskScore=as.vector(trainScore),risk)
+write.table(geneCoef,file = 'G:/湘雅/陆/new_modle_GSE157010/geneCoef.txt',
+            sep='\t',quote=FALSE,row.names = FALSE,col.names = TRUE)
+write.table(outTab,file = 'G:/湘雅/陆/new_modle_GSE157010/tcgaRisk.xls',
+            sep='\t',quote=FALSE,row.names = FALSE,col.names = TRUE)
+##geo测试
+testFinalGeneExp=geo_out[,lassoGene]
+testScore=apply(testFinalGeneExp,1,myfun)
+outCol=c("last_followup","event",lassoGene)
+risk<-as.vector(ifelse(testScore>median(trainScore),"high","low"))
+outTab=cbind(rownames(geo_out),geo_out[,outCol],riskScore=as.vector(testScore),risk)
+write.table(outTab,file = 'G:/湘雅/陆/new_modle_GSE157010/geoRisk.xls',
+            sep='\t',quote=FALSE,row.names = FALSE,col.names = TRUE)
+
+####生存分析图谱
+#######G:/湘雅/陆/new_modle_GSE157010
+#######tcgaRisk.xls
+#tcgaRisk = read.table("G:/湘雅/陆/new_modle_GSE157010/tcgaRisk.xls",header = TRUE,sep = "\t")
+#######geoRisk.xls
+#geoRisk = read.table("G:/湘雅/陆/new_modle_GSE157010/geoRisk.xls",header = TRUE,sep = "\t")
+diff=survdiff(Surv(last_followup,event)~risk,data = tcgaRisk)
+pValue=1-pchisq(diff$chisq,df=1)
+pValue=signif(pValue,4)
+pValue=format(pValue,scientific=TRUE)
+fit<- survfit(Surv(last_followup,event)~risk,data = tcgaRisk)
+ggsurvplot(fit,
+           data = tcgaRisk,
+           surv.median.line = "hv",
+           pval = paste("p=",pValue),
+           pval.size = 6,
+           risk.table = TRUE,
+           legend.labs=c("High risk","Low risk"),
+           legend.title='Risk',
+           xlab="Time(day)",
+           break.time.by=500,
+           risk.table.title="",
+           risk.table.height=.25,
+           conf.int = F,
+           ncensor.plot=TRUE,
+           palette=c("#E7B800","#2E9FDF"),
+           ggtheme = theme_light())
+###GEO.plot
+diff=survdiff(Surv(last_followup,event)~risk,data = geoRisk)
+pValue=1-pchisq(diff$chisq,df=1)
+pValue=signif(pValue,4)
+pValue=format(pValue,scientific=TRUE)
+fit<- survfit(Surv(last_followup,event)~risk,data = geoRisk)
+ggsurvplot(fit,
+           data = geoRisk,
+           surv.median.line = "hv",
+           pval = paste("p=",pValue),
+           pval.size = 6,
+           risk.table = TRUE,
+           legend.labs=c("High risk","Low risk"),
+           legend.title='Risk',
+           xlab="Time(day)",
+           break.time.by=500,
+           risk.table.title="",
+           risk.table.height=.25,
+           conf.int = T,
+           ncensor.plot=TRUE,
+           palette=c("#E7B800","#2E9FDF"),
+           ggtheme = theme_light())

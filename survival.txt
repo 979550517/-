@@ -1,0 +1,677 @@
+##liupinbo_liupinbo1999@163.com
+##version：1.3.0
+
+library(jsonlite)
+options(scipen = 10)
+meta <- jsonlite::fromJSON("G:/湘雅/陆/FPKM/metadata.cart.2021-08-26.json")
+ids<-meta$associated_entities
+ID <- sapply(ids, function(x){x[,1]})
+matrix2<- read.table(file = 'G:/湘雅/陆/FPKM/matrix.xls',sep = '\t')
+library(tidyverse)
+matrix3<-t(matrix2)
+filename<-matrix3[2:552,1]
+file2id = data.frame(fileid = meta$file_id,ID=ID)
+matrix3[2:552,1]<-ID
+matrix2<-t(matrix3)
+write.table(matrix2,file = 'G:/湘雅/陆/FPKM_matrix.txt',
+            sep='\t',quote=FALSE,row.names = FALSE,col.names = FALSE)
+matrix2<- read.table(file = 'G:/湘雅/陆/FPKM_matrix.xls',sep = '\t',header = F)
+library(org.Hs.eg.db)
+library(tidyverse)
+library(clusterProfiler)
+colnames(matrix2)<-matrix2[1,]
+matrix2<-matrix2[-1,]
+temp<-bitr(matrix2$gene,fromType = 'ENSEMBL',toType = 'SYMBOL',OrgDb = org.Hs.eg.db)
+matrix3 <- left_join(temp,matrix2,by = c('ENSEMBL'='gene')) %>% distinct(SYMBOL,.keep_all = TRUE)
+matrix3<-matrix3[,-1]
+matrix4<-t(matrix3)
+write.table(matrix4,file = 'G:/湘雅/陆/FPKM_symbol_matrix.xls',
+            sep='\t',quote=FALSE,row.names = TRUE,col.names = FALSE)
+
+
+install.packages('survival')
+install.packages('survminer')
+library(survival)
+library(survminer)
+matrix <- read.table("G:/湘雅/陆/FPKM_symbol_matrix.xls",header = TRUE,sep = "\t")
+clinical <- read.table("G:/湘雅/陆/meta.xls",header = TRUE,sep = "\t")
+temp <- read.table("G:/湘雅/陆/temp.xls",header = FALSE,sep = "\t")
+matrix2 <- left_join(temp,matrix,by = c('V1'='SYMBOL'))
+library(tidyverse)
+merge_matrix <- left_join(clinical,matrix2,by=c("ID"="V2"))
+merge_matrix2<-filter(merge_matrix,last_followup>=30)
+write.table(merge_matrix2,file = 'G:/湘雅/陆/FPKM_merge_matrix.txt',
+            sep='\t',quote=FALSE,row.names = FALSE,col.names = TRUE)
+
+####''''
+res.cox_age_group <- coxph(Surv(last_followup, event) ~ LINC02082, data = merge_matrix2)
+res.cox_race
+S_age<-summary(res.cox_age_group)
+p.value<-signif(S_age$wald["pvalue"], digits=2)
+HR <-signif(S_age$coef[2], digits=4)
+HR.confint.lower <- signif(S_age$conf.int[,"lower .95"],digits=4)
+HR.confint.upper <- signif(S_age$conf.int[,"upper .95"],digits=4)
+HR2 <- paste0(HR, " (", HR.confint.lower, "~", HR.confint.upper, ")")
+age_HR<-c(p.value,HR2)
+names(age_HR)<-c("p.value "," HR (95%lowerforupper)")
+temp <- as.data.frame(age_HR,check.names =FALSE)
+colnames(temp)<-"age"
+temp <- t(temp)
+#查看变量exp(coef)中的不同值的个数
+length(unique(temp$`exp(coef)`))
+names(temp)[1]<-"P_value"
+#按行合并
+rbind(temp,temp2)
+#按列合并
+cbind(temp,temp2)
+####''''
+
+library(survival)
+library(survminer)
+library(tidyverse)
+merge_matrix3<-t(merge_matrix2)
+write.table(merge_matrix3,file = 'G:/湘雅/陆/FPKM_merge_T_matrix.txt',
+            sep='\t',quote=FALSE,row.names = TRUE,col.names = FALSE)
+merge_matrix2<-read.table(file = 'G:/湘雅/陆/FPKM_merge_matrix.xls',
+            sep='\t',header = T)
+list = colnames(merge_matrix2)[12:ncol(merge_matrix2)]
+merge_matrix<-merge_matrix2
+survival<-function(list2,SUR = data_frame()){
+  for (var2 in list2) {
+    s=as.formula(paste("Surv(last_followup, event) ~ ",var2))
+    res.cox2 <- coxph(s,data = merge_matrix)
+    #res.cox2 <- coxph(Surv(last_followup, event) ~ var2, data = merge_matrix)
+    summary2<-summary(res.cox2)
+    p.value2 <- signif(summary2$wald["pvalue"], digits=2)
+    HR2 <-signif(summary2$coef[2], digits=4)
+    HR2.confint.lower <- signif(summary2$conf.int[,"lower .95"],digits=4)
+    HR2.confint.upper <- signif(summary2$conf.int[,"upper .95"],digits=4)
+    HR3 <- paste0(HR2, "(", HR2.confint.lower, "~", HR2.confint.upper, ")")
+    HR2 <- c(p.value2,HR3,HR2,HR2.confint.lower,HR2.confint.upper)
+    names(HR2)<-c("p.value "," HR (95% lower for upper)","HR","95%lower","95%upper")
+    temp2 <- as.data.frame(HR2,check.names =FALSE)
+    colnames(temp2)<-var2
+    temp2 <- t(temp2)
+    SUR<-rbind(SUR,temp2)
+  }
+  return(SUR)
+}
+cox_result<-survival(list)
+write.table(cox_result,file = 'G:/湘雅/陆/analyes_FPKM/allcox.xls',
+            sep='\t',quote=FALSE,row.names = TRUE,col.names = TRUE)
+cox_result<-read.table(file = 'G:/湘雅/陆/analyes_FPKM/allcox.xls',sep='\t',header=T)
+cox_result2<-filter(cox_result,p.value<=0.05)
+write.table(cox_result2,file = 'G:/湘雅/陆/analyes_FPKM/p_qualified_cox.xls',
+            sep='\t',quote=FALSE,row.names = FALSE,col.names = TRUE)
+
+
+
+####''''
+a<-data.frame()
+a<-rbind(a,temp2)
+a<-rbind(a,temp)
+#forest plot
+rt<-read.table(file = "G:/湘雅/陆/forest_plot_gene.txt",header = T,sep = "\t",row.names=1,check.names = F)
+gene <- rownames(rt)
+hr <- rt$HR
+hrlow<- rt$`95%lower`
+hrhigh<- rt$`95%upper`
+Hazard.ratio<-paste(hr,"(",hrlow,"-",hrhigh,")")
+pval<-rt$p.value
+pdf(file="forest.pdf",width = 6,height = 4.5)
+n <- nrow(rt)
+nRow <- n+1
+ylim<-c(1,nRow)
+layout(matrix(c(1,2),nc=2),widths = c(3,2))
+
+xlim = c(0,3)
+par(mar=c(4,2.5,2,1))
+plot(1,xlim=xlim,ylim=ylim,type="n",axes=F,xlab="",ylab="")
+text.cex <- 0.8
+text(0,n:1,gene,adj=0,cex=text.cex)
+text(1.5-0.5*0.2,n:1,pval,adj = 1,cex = text.cex);text(1.5-0.5*0.2,n+1,'pvalue',cex = text.cex,font = 2,adj = 1)
+text(3,n:1,Hazard.ratio,adj = 1,cex=text.cex);text(3,n+1,'Hazard ratio',cex=text.cex,font=2,adj=1)
+
+par(mar=c(4,1,2,1),mgp=c(2,0.5,0))
+xlim = c(0,max(as.numeric(hrlow),as.numeric(hrhigh)))
+plot(1,xlim=xlim,ylim=ylim,type="n",axes=F,ylab="",xaxs="i",xlab="Hazard ratio")
+arrows(as.numeric(hrlow),n:1,as.numeric(hrhigh),n:1,angle = 90,code=3,length = 0.05,col = "darkblue")
+abline(v=1,col="black",lty=2,lwd=2)
+boxcolor <- ifelse(as.numeric(hr)>1,'red','green')
+points(as.numeric(hr),n:1,pch = 15,col = boxcolor,cex=1.3)
+axis(1)
+dev.new
+####''''
+
+
+
+###forest2
+install.packages("forestplot")
+library(forestplot)
+rs_forest <- read.table(file = 'G:/湘雅/陆/analyes_FPKM/cox_DE_gene.xls',header=FALSE,sep="\t",quote="")
+rs_forest<-rs_forest[-6,]
+rs_forest <- read.table(file = 'G:/湘雅/陆/analyes_FPKM/p_qualified_cox.xls',header=FALSE,sep="\t",quote="")
+rs_forest2<-rs_forest[-1,]
+rs_forest2$V4<-as.numeric(rs_forest2$V4)
+rs_forest2$V5<-as.numeric(rs_forest2$V5)
+rs_forest2$V6<-as.numeric(rs_forest2$V6)
+# 读入数据的时候一定要把header设置成FALSE，确保第一行不被当作列名称。
+forestplot(labeltext = as.matrix(rs_forest[,1:3]),
+#设置用于文本展示的列，此处我们用数据的前四列作为文本，在图中展示
+mean = c(NA,rs_forest2$V4), #设置均值
+lower = c(NA,rs_forest2$V5), #设置均值的lowlimits限
+upper = c(NA,rs_forest2$V6), #设置均值的uplimits限
+is.summary=c(T,F,F,F,F,F,F,F,F,F,F,F,F,F,F,F,F,F,F,F,F,F,F,F,F,F,F,F,F,F,F,F,F,F),
+#该参数接受一个逻辑向量，用于定义数据中每一行是否是汇总值，若是，则在对应位置设置为TRUE，若否，则设置为FALSE；设置为TRUE的行则以粗体出现
+zero = 1, #设置参照值，此处我们展示的是HR值，故参照值是1，而不是0
+boxsize = 0.4, #设置点估计的方形大小
+lineheight = unit(16,'mm'),#设置图形中的行距
+colgap = unit(8,'mm'),#设置图形中的列间距
+lwd.zero = 2,#设置参考线的粗细
+lwd.ci = 2,#设置区间估计线的粗细
+col=fpColors(box='#458B00',summary="#8B008B",lines = 'black',zero = '#7AC5CD'),
+#使用fpColors()函数定义图形元素的颜色，从左至右分别对应点估计方形，汇总值，区间估计线，参考线
+xlab="The estimates",#设置x轴标签
+lwd.xaxis=2,#设置X轴线的粗细
+lty.ci = "solid",
+graph.pos = 3)#设置森林图的位置，此处设置为4，则出现在第四列
+
+
+
+###去批次效应
+BiocManager::install("sva")
+library(sva)
+merge<-t(rbind(tcga[,12:15],geo[,5:8]))
+bathtype=c(rep(1,nrow(tcga)),rep(2,nrow(geo)))
+outTab<-ComBat(merge,bathtype,par.prior = T)
+tcga_out<-t(outTab[,1:327])
+geo_out<-t(outTab[,328:ncol(outTab)])
+tcga_out<-cbind(tcga[,1:11],tcga_out)
+geo_out<-cbind(geo[,1:4],geo_out)
+write.table(tcga_out,file = "G:/湘雅/陆/new_modle/tcga_adj.xls",col.names=T,sep="\t",
+            row.names=F,quote=F)
+write.table(geo_out,file = "G:/湘雅/陆/new_modle/geo_adj.xls",col.names=T,sep="\t",
+            row.names=T,quote=F)
+
+###
+library(glmnet)
+library(survival)
+rt<-read.table(file = 'G:/湘雅/陆/analyes_FPKM/cox_DE_exp.xls',header = T,sep="\t")
+#rt$last_followup=rt$last_followup/365
+x=as.matrix(rt[,12:ncol(rt)])/10
+x<-x[,1:4]
+y=data.matrix(Surv(rt$last_followup,rt$event))
+fit=glmnet::glmnet(x,y,family = "cox",maxit = 1000)
+cvfit=glmnet::cv.glmnet(x,y,family = "cox",maxit = 1000)
+coef=coef(fit,s=cvfit$lambda.min)
+#index<-which(coef!=0)
+#actCoef = coef[index]
+#lassoGene=row.names(coef)[index]
+actCoef<-coef[,1]  ###向量，列表
+lassoGene=row.names(coef)
+geneCoef=cbind(Gene=lassoGene,Coef=actCoef)
+write.table(geneCoef,file = 'G:/湘雅/陆/analyes_FPKM/geneCoef.txt',
+            sep='\t',quote=FALSE,row.names = FALSE,col.names = TRUE)
+
+trainFinalGeneExp=rt[,lassoGene]
+myfun<- function(x) {
+  crossprod(as.numeric(x),actCoef)
+}
+trainScore=apply(trainFinalGeneExp,1,myfun)
+outCol=c("sample","V1","last_followup","event",lassoGene)
+risk<-as.vector(ifelse(trainScore>median(trainScore),"high","low"))
+outTab=cbind(rt[,outCol],riskScore=as.vector(trainScore),risk)
+write.table(outTab,file = 'G:/湘雅/陆/analyes_FPKM/tcgaRisk.txt',
+            sep='\t',quote=FALSE,row.names = FALSE,col.names = TRUE)
+
+##GEO
+####探针转化symbol_id
+a_temp_matrix<-read.table(file = 'G:/湘雅/陆/GEO/GSE43131/raw_matrix.xls',sep = '\t',header = T)
+a_temp_TZ<-read.table(file = 'G:/湘雅/陆/GEO/GSE43131/TZ.xls',sep = '\t',header = F)
+a_temp_an<-read.table(file = 'G:/湘雅/陆/GEO/GSE43131/meta.xls',sep = '\t',header = F)
+a_GEO_merge_matrix <- left_join(a_temp_TZ,a_temp_matrix,by=c("V1"="ID_REF"))
+write.table(a_GEO_merge_matrix,file = 'G:/湘雅/陆/GEO/GSE43131/matrix_symbol.xls',
+            sep='\t',quote=FALSE,row.names = FALSE,col.names = TRUE)
+###临床信息合并
+a_GEO_merge_matrix<-a_GEO_merge_matrix[,-1]
+a_GEO_merge_matrix<-t(a_GEO_merge_matrix)
+colnames(a_GEO_merge_matrix)<-a_GEO_merge_matrix[1,]
+a_GEO_merge_matrix<-a_GEO_merge_matrix[-1,]
+a_GEO_merge_matrix<-cbind(sample=rownames(a_GEO_merge_matrix),a_GEO_merge_matrix)
+a_temp_an<-t(a_temp_an)
+colnames(a_temp_an)<-a_temp_an[1,]
+a_temp_an<-a_temp_an[-1,]
+merge_matrix<-merge(a_temp_an,a_GEO_merge_matrix,by=c("sample"="sample"))
+write.table(merge_matrix,file = 'G:/湘雅/陆/GEO/GSE43131/merge_matrix.xls',
+            sep='\t',quote=FALSE,row.names = FALSE,col.names = TRUE)
+###从mergeMatrix中提取目标基因
+GDA<-merge_matrix[,"GDA"]
+GDA1<-merge_matrix[,"GDA.1"]
+GDA2<-merge_matrix[,"GDA.2"]
+CYP2S1<-merge_matrix[,"CYP2S1"]
+UGT1A8<-merge_matrix[,"UGT1A8"]
+UGT1A8.1<-merge_matrix[,"UGT1A8.1"]
+UGT1A8.2<-merge_matrix[,"UGT1A8.2"]
+UGT1A8.3<-merge_matrix[,"UGT1A8.3"]
+UGT1A8.4<-merge_matrix[,"UGT1A8.4"]
+PTGES<-merge_matrix[,"PTGES"]
+target_gene_matrix<-cbind(sample_id=merge_matrix[,1],
+                          merge_matrix[,2:5],
+                          GDA.1=GDA,GDA.2=GDA1,GDA.3=GDA2,
+                          CYP2S1=CYP2S1,
+                          UGT1A8.1=UGT1A8,
+                          UGT1A8.2=UGT1A8.1,
+                          UGT1A8.3=UGT1A8.2,
+                          UGT1A8.4=UGT1A8.3,
+                          UGT1A8.5=UGT1A8.4,
+                          PTGES=PTGES)
+write.table(target_gene_matrix,file = 'G:/湘雅/陆/GEO/GSE43131/merge_target_matrix.xls',
+            sep='\t',quote=FALSE,row.names = FALSE,col.names = TRUE)
+###GEO模型预测
+rt<-read.table(file = 'G:/湘雅/陆/GEO/GSE43131/merge_target_matrix.xls',
+               sep='\t',header=T,row.names=1)
+testFinalGeneExp<-rt[,5:ncol(rt)]
+actCoef<-read.table(file = "G:/湘雅/陆/analyes_FPKM/geneCoef.txt",sep="\t",header=T,row.names=1)
+actCoef<-as.vector(actCoef)
+function(x) {
+  crossprod(as.numeric(x),actCoef)
+}
+testScore<-apply(testFinalGeneExp, 1, myfun)
+
+
+
+
+###"""
+a_GEO_merge_matrix<-read.table(file = 'G:/湘雅/陆/GEO/GSE157010/matrix_symbol.xls',
+            sep='\t',header = F)
+a_t_GEO_merge_matrix<-t(a_GEO_merge_matrix)
+colnames(a_t_GEO_merge_matrix)<-a_t_GEO_merge_matrix[1,]
+a_t_GEO_merge_matrix<-a_t_GEO_merge_matrix[-1,]
+a_temp_an2<-t(a_temp_an)
+a_temp_an2<-a_temp_an2[-1,]
+a_temp_an2<-as.data.frame(a_temp_an2)
+a<-as.data.frame(a_t_GEO_merge_matrix[,1])
+b <- left_join(a,a_temp_an2,by=c("sample"="sample"))
+b_GEO_merge_matrix<-cbind(b,a_t_GEO_merge_matrix[,2:ncol(a_t_GEO_merge_matrix)])
+write.table(b_GEO_merge_matrix,file = 'G:/湘雅/陆/GEO/GSE157010/merge_matrix.xls',
+            sep='\t',quote=FALSE,row.names = FALSE,col.names = TRUE)
+###"""
+
+GDA<-b_GEO_merge_matrix[,"GDA"]
+CYP2S1<-b_GEO_merge_matrix[,"CYP2S1"]
+PTGES<-b_GEO_merge_matrix[,"PTGES"]
+UGT1A8<-b_GEO_merge_matrix[,"UGT1A1 /// UGT1A10 /// UGT1A4 /// UGT1A6 /// UGT1A8 /// UGT1A9"]
+c<-b_GEO_merge_matrix[,c("sample","month","event","GDA","CYP2S1","PTGES","UGT1A1 /// UGT1A10 /// UGT1A4 /// UGT1A6 /// UGT1A8 /// UGT1A9")]
+colnames(c)<-c("sample","month","event","GDA","CYP2S1","PTGES","UGT1A8")
+GEO_DE_cox <- c
+write.table(GEO_DE_cox,file = 'G:/湘雅/陆/GEO_cox_DE_gene.xls',
+            sep='\t',quote=FALSE,row.names = FALSE,col.names = TRUE)
+
+
+####'''
+row.names(GEO_DE_cox)<-GEO_DE_cox[,1]
+GEO_DE_cox<-GEO_DE_cox[,-1]
+GEO_DE_cox$month<-as.numeric(GEO_DE_cox$month)
+GEO_DE_cox$month<-GEO_DE_cox$month*30
+colnames(GEO_DE_cox)<-c("day","event","GDA","CYP2S1","PTGES","UGT1A8")
+testFinalGeneExp<-GEO_DE_cox[,c("GDA","CYP2S1","UGT1A8","PTGES")]
+testScore<-apply(testFinalGeneExp, 1, myfun)
+outCol<-c("sample","last_followup","event",lassoGene)
+risk<-as.vector(ifelse(testScore>median(trainScore),"high","low"))
+outTab<-cbind(sample = row.names(testFinalGeneExp),last_followup=GEO_DE_cox$day,
+              event=GEO_DE_cox$event,testFinalGeneExp[,1:4],riskScore=as.vector(testScore),risk)
+write.table(outTab,file = 'G:/湘雅/陆/analyes_FPKM/GEORisk.txt',
+            sep='\t',quote=FALSE,row.names = FALSE,col.names = TRUE)
+
+
+
+
+####survival
+
+install.packages('survival')
+install.packages('survminer')
+library(survival)
+library(survminer)
+###'''
+rt = read.table("G:/湘雅/陆/analyes_FPKM/tcgaRisk.txt",header = TRUE,sep = "\t")
+diff=survdiff(Surv(last_followup,event)~risk,data = rt)
+pValue=1-pchisq(diff$chisq,df=1)
+pValue=signif(pValue,4)
+pValue=format(pValue,scientific=TRUE)
+fit<- survfit(Surv(last_followup,event)~risk,data = rt)
+###'''
+
+
+
+
+
+bioSurvival=function(inputFile=null,outFile=null){
+  rt = read.table(inputFile,header = TRUE,sep = "\t")
+  diff=survdiff(Surv(last_followup,event)~risk,data = rt)
+  pValue=1-pchisq(diff$chisq,df=1)
+  pValue=signif(pValue,4)
+  pValue=format(pValue,scientific=TRUE)
+  fit<- survfit(Surv(last_followup,event)~risk,data = rt)
+  
+  
+  ##plot
+  surPlot<-ggsurvplot(fit,
+                      data = rt,
+                      conf.int = TRUE,
+                      pval = paste("p=",pValue),
+                      pval.size = 6,
+                      risk.table = TRUE,
+                      legend.labs=c("High risk","Low risk"),
+                      legend.title='Risk',
+                      xlab="Time(day)",
+                      break.time.by=500,
+                      risk.table.title="",
+                      palette = c("red","blue"),
+                      risk.table.height=.25)
+  
+  pdf(file = outFile,onefile = FALSE,width = 6.5,height = 5.5)
+  print(surPlot)
+  dev.off()
+}
+
+##
+fit2<-read.table("G:/湘雅/陆/analyes_FPKM/tcgaRisk.txt",header = TRUE,sep = "\t",row.names=2,check.names=F)
+fit2<-fit2[,-1]
+fit2<-fit2[order(fit2$riskScore),]
+riskClass<-fit2[,"risk"]
+lowLength=length(riskClass[riskClass=="low"])
+highLength=length(riskClass[riskClass=="high"])
+line=fit2[,"riskScore"]
+line[line>7]=7
+line[line<(-15)]=-15
+plot(line,type="p",pch=20,xlab="Patients(increasing risk score)",
+     ylab = "Risk score",col=c(rep("green",lowLength),rep("red",highLength)))
+abline(h=median(fit2$riskScore),v=lowLength,lty=2)
+legend("topleft",c("High risk","Low risk"),bty = "n",pch = 19,col = c("red","green"),cex=1.2)
+
+
+color=as.vector(fit2$event)
+color[color==1]="red"
+color[color==0]="green"
+plot(fit2$last_followup,pch=19,xlab = "Patients(increasing risk score)"
+     ,ylab = "Survival time(day)",col = color)
+legend("topleft",c("Dead","Alive"),bty="n",pch = 19,col = c("red","green"),cex = 1.2)
+abline(v=lowLength,lty=2)
+
+
+
+rt_pheatmap<-fit2[,3:(ncol(fit2)-2)]
+rt_pheatmap<-log2(rt_pheatmap+1)
+rt_pheatmap<-t(rt_pheatmap)
+annotation<-data.frame(type=fit2[,ncol(fit2)])
+row.names(annotation)<-rownames(fit2)
+pheatmap::pheatmap(rt_pheatmap,annotation = annotation,cluster_cols = FALSE,
+                   fontsize_row = 11,show_colnames = F,fontsize_col = 3,
+                   color = colorRampPalette(c("green","black","red"))(50))
+
+
+
+
+
+
+
+
+
+
+bioRiskplot<-function(inputFile = null,riskScoreFile=null,survStatFile=null,heatmapFile=null){
+  fit2<-read.table(inputFile,header = TRUE,sep = "\t",row.names=2,check.names=F)
+  fit2<-fit2[order(rt$riskScore),]
+  
+#lineplot 
+  riskClass<-fit2[,"risk"]
+  lowLength=length(riskClass[riskClass=="low"])
+  highLength=length(riskClass[riskClass=="high"])
+  line=fit2[,"riskScore"]
+  line[line>10]=10
+  pdf(file = riskScoreFile,width = 10,height = 3,5)
+  plot(line,type="p",pch=20,xlab="Patients(increasing risk score)",
+       ylab = "Risk score",col=c(rep("green",lowLength),rep("red",highLength)))
+  abline(h=median(fit2$riskScore),v=lowLength,lty=2)
+  legend("topleft",c("High risk","Low risk"),bty = "n",pch = 19,col = c("red","green"),cex=1.2)
+  dev.off()
+  
+  
+  
+#plotstat
+  color=as.vector(fit2$event)
+  color[color==1]="red"
+  color[color==0]="green"
+  pdf(file = survStatFile,width = 10,height = 3.5)
+  plot(fit2$last_followup,pch=19,xlab = "Patients(increasing risk score)"
+       ,ylab = "Survival time(day)",col = color)
+  legend("topleft",c("Dead","Alive"),bty="n",pch = 19,col = c("red","green"),cex = 1.2)
+  abline(v=lowLength,lty=2)
+  dev.off()
+  
+  
+  
+  
+#pheatmap
+  rt_pheatmap<-fit2[,3:(ncol(fit2)-2)]
+  rt_pheatmap<-log2(rt_pheatmap+1)
+  rt_pheatmap<-t(rt_pheatmap)
+  annotation<-data.frame(type=fit2[,ncol(fit2)])
+  row.names(annotation)<-rownames(fit2)
+  pdf(file = heatmapFile,width = 10,height = 3.5)
+  pheatmap::pheatmap(rt_pheatmap,annotation = annotation,cluster_cols = FALSE,
+                     fontsize_row = 11,show_colnames = F,fontsize_col = 3,
+                     color = colorRampPalette(c("green","black","red"))(50))
+  dev.off()
+  
+  
+}
+
+
+
+
+#ROC
+install.packages('survivalROC')
+library(survivalROC)
+library(tidyverse)
+risk<-read.table("G:/湘雅/陆/analyes_FPKM/tcgaRisk.txt",header = T,sep = '\t',check.names = F,row.names = 2)
+cli<-read.table("G:/湘雅/陆/meta_format.txt",sep = "\t",check.names = F,header = T,row.names=1)
+sameSample<-data.frame(intersect(risk$sample,cli$ID))
+colnames(sameSample)<-"ID"
+temp <- left_join(sameSample,risk,by=c("ID"="sample"))
+rt <- left_join(temp,cli,by=c("ID"="ID"))
+rt2<-rt[,c(1,2,3,10,11,12,13,4,5,6,7,8,9)]
+rocCol=rainbow(ncol(rt2)-3)
+aucText<-c()
+
+par(oma=c(0.5,1,0,1),font.lab = 1.5,font.axis=1.5)
+roc=survivalROC::survivalROC(Stime = rt2$last_followup,status = rt2$event,
+                             marker = rt2$riskScore,predict.time = 365*5,method = "KM")
+plot(roc$FP,roc$TP,type="l",xlim=c(0,1),ylim=c(0,1),col=rocCol[1],
+     xlab="False positive rate",ylab="True positive rate",lwd=2,cex.main=1.3,
+     cex.lab=1.2,cex.axis=1.2,font=1.2)
+aucText=c(aucText,paste0("risk Score","(AUC =",sprintf("%.3f",roc$AUC),")"))
+abline(0,1)
+
+j=1
+for (i in colnames(rt2[,6:ncol(rt2)-2])) {
+  print(i)
+  roc=survivalROC::survivalROC(Stime = rt2$last_followup,status = rt2$event,
+                               marker = rt2[,i],predict.time = 365*5,method = "KM")
+  j=j+1
+  aucText=c(aucText,paste0(i,"(AUC =",sprintf("%.3f",roc$AUC),")"))
+  lines(roc$FP,roc$TP,type = 'l',xlim=c(0,1),ylim=c(0,1),col=rocCol[j],lwd=2)
+}
+legend("bottomright",aucText,lwd=2,bty="n",col = rocCol)
+
+
+
+
+
+
+
+bioROC<-function(riskFile=null,cliFile=null,outFile=null){
+  risk<-read.table(riskFile,header = T,sep = '\t',check.names = F,row.names = 2)
+  cli<-read.table(cliFile,sep = "\t",check.names = F,header = T)
+  sameSample<-intersect(row.names(cli),row.names(risk))
+  risk<-risk[sameSample,]
+  cli<-cli[sameSample,]
+  rt<-cbind(last_followup=risk[,2],event=risk[,3],cli,riskScore=risk[,(ncol(risk)-1)])
+  rocCol=rainbow(ncol(rt)-2)
+  aucText<-c()
+  
+  
+  #ROC of risk Score
+  pdf(file = outFile,width = 6,height = 6)
+  par(oma=c(0,5,1,0,1),font.lab = 1.5,font.axis=1.5)
+  roc=survivalROC::survivalROC(Stime = rt$last_followup,status = rt$event,
+                               marker = rt$riskScore,predict.time = 1,method = "KM")
+  plot(roc$FP,roc$TP,type="1",xlim=c(0,1),ylim=c(0,1),col=rocCol[1],
+       xlab="False positive rate",ylab="True positive rate",lwd=2,cex.main=1.3,
+       cex.lab=1.2,cex.axis=1.2,font=1.2)
+  aucText=c(aucText,paste0("risk Score","(AUC =",sprintf("%.3f",roc$AUC),")"))
+  abline(0,1)
+  
+  
+  #临床性状
+  j=1
+  for (i in colnames(rt[,3:ncol(rt)-1])) {
+    roc=survivalROC::survivalROC(Stime = rt$last_followup,status = rt[,i],
+                                 marker = rt$riskScore,predict.time = 1,method = "KM")
+    j=j+1
+    aucText=c(aucText,paste0(i,"(AUC =",sprintf("%.3f",roc$AUC),")"))
+    lines(roc$FP,roc$TP,type = 'l',xlim=c(0,1),ylim=c(0,1),col=rocCol[j],lwd=2)
+  }
+  legend("bottomright",aucText,lwd=2,bty="n",col = rocCol)
+  
+}
+
+
+###独立预后
+uniTab<-data.frame()
+for (i in colnames(rt2[,c(4:7,ncol(rt2)-1)])) {
+  print(i)
+  cox<-coxph(Surv(last_followup,event)~rt2[,i],data = rt2)
+  coxSummary=summary(cox)
+  uniTab=rbind(uniTab,
+               cbind(id=i,
+                     HR=coxSummary$conf.int[,"exp(coef)"],
+                     HR.95L=coxSummary$conf.int[,"lower .95"],
+                     HR.95H=coxSummary$conf.int[,"upper .95"],
+                     pvalue=coxSummary$coefficients[,"Pr(>|z|)"]))
+}
+write.table(uniTab,file ="G:/湘雅/陆/analyes_FPKM/tcga_uniCox.txt",sep='\t',row.names=F,quote=F)
+
+###forestplot
+uniTab<-rbind(title=colnames(uniTab),uniTab)
+row.names(uniTab)<-uniTab[,1]
+uniTab2<-uniTab[,-1]
+uniTab2<-uniTab2[-1,]
+uniTab2$HR<-as.numeric(uniTab2$HR)
+uniTab2$HR.95L<-as.numeric(uniTab2$HR.95L)
+uniTab2$HR.95H<-as.numeric(uniTab2$HR.95H)
+uniTab2$pvalue<-as.numeric(uniTab2$pvalue)
+id<-row.names(uniTab2)
+HR<-sprintf("%.3f",uniTab2$HR)
+HR.L<-sprintf("%.3f",uniTab2$HR.95L)
+HR.H<-sprintf("%.3f",uniTab2$HR.95H)
+Hazard.ratio<-paste0(HR,"(",HR.L,"~",HR.H,")")
+pValue<-ifelse(uniTab2$pvalue<0.001,"<0.001",sprintf("%.3f",uniTab2$pvalue))
+forest_data<-cbind(Pvalue=pValue,Hazard.ratio=Hazard.ratio,HR=HR,HR.L=HR.L,HR.H=HR.H)
+forest_data<-as.data.frame(forest_data)
+forest_data$HR<-as.numeric(forest_data$HR)
+forest_data$HR.L<-as.numeric(forest_data$HR.L)
+forest_data$HR.H<-as.numeric(forest_data$HR.H)
+row.names(forest_data)<-id
+
+forest_data<-cbind(var=row.names(forest_data),forest_data)
+forest_data<-rbind(title=colnames(forest_data),forest_data)
+forest_data2<-forest_data
+forest_data<-forest_data[,-1]
+forest_data<-forest_data[-1,]
+library(forestplot)
+forestplot(labeltext = as.matrix(forest_data2[,1:3]),
+           #设置用于文本展示的列，此处我们用数据的前四列作为文本，在图中展示
+           mean = c(NA,forest_data[,3]), #设置均值
+           lower = c(NA,forest_data[,4]), #设置均值的lowlimits限
+           upper = c(NA,forest_data[,5]), #设置均值的uplimits限
+           is.summary=c(T,F,F,F,F,F,F,F,F,F,F,F,F,F,F,F,F,F,F,F,F,F,F,F,F,F,F,F,F,F,F,F,F,F),
+           #该参数接受一个逻辑向量，用于定义数据中每一行是否是汇总值，若是，则在对应位置设置为TRUE，若否，则设置为FALSE；设置为TRUE的行则以粗体出现
+           zero = 1, #设置参照值，此处我们展示的是HR值，故参照值是1，而不是0
+           boxsize = 0.4, #设置点估计的方形大小
+           lineheight = unit(16,'mm'),#设置图形中的行距
+           colgap = unit(8,'mm'),#设置图形中的列间距
+           lwd.zero = 2,#设置参考线的粗细
+           lwd.ci = 2,#设置区间估计线的粗细
+           col=fpColors(box='#00FF7F',summary="#8B008B",lines = 'black',zero = '#7AC5CD'),
+           #使用fpColors()函数定义图形元素的颜色，从左至右分别对应点估计方形，汇总值，区间估计线，参考线
+           xlab="The estimates",#设置x轴标签
+           lwd.xaxis=2,#设置X轴线的粗细
+           lty.ci = "solid",
+           graph.pos = 4)#设置森林图的位置，此处设置为4，则出现在第四列
+
+
+
+
+
+#多因素
+multiCox=coxph(Surv(last_followup,event)~riskScore+age+gender+stage+age_group,data = rt2)
+multiCoxSum=summary(multiCox)
+multiTab=cbind(
+  HR=multiCoxSum$conf.int[,"exp(coef)"],
+  HR.95L=multiCoxSum$conf.int[,"lower .95"],
+  HR.95H=multiCoxSum$conf.int[,"upper .95"],
+  pvalue=multiCoxSum$coefficients[,"Pr(>|z|)"]
+)
+multiTab=cbind(id=row.names(multiTab),multiTab)
+write.table(multiTab,file ="G:/湘雅/陆/analyes_FPKM/tcga_multiCox.txt",sep='\t',row.names=F,quote=F)
+
+#forestplot
+multiTab<-as.data.frame(multiTab)
+multiTab<-multiTab[,-1]
+multiTab$HR<-as.numeric(multiTab$HR)
+multiTab$HR.95L<-as.numeric(multiTab$HR.95L)
+multiTab$HR.95H<-as.numeric(multiTab$HR.95H)
+multiTab$pvalue<-as.numeric(multiTab$pvalue)
+id<-row.names(multiTab)
+HR<-sprintf("%.3f",multiTab$HR)
+HR.L<-sprintf("%.3f",multiTab$HR.95L)
+HR.H<-sprintf("%.3f",multiTab$HR.95H)
+Hazard.ratio<-paste0(HR,"(",HR.L,"~",HR.H,")")
+pValue<-ifelse(multiTab$pvalue<0.001,"<0.001",sprintf("%.3f",multiTab$pvalue))
+forest_data<-cbind(Pvalue=pValue,Hazard.ratio=Hazard.ratio,HR=HR,HR.L=HR.L,HR.H=HR.H)
+forest_data<-as.data.frame(forest_data)
+forest_data$HR<-as.numeric(forest_data$HR)
+forest_data$HR.L<-as.numeric(forest_data$HR.L)
+forest_data$HR.H<-as.numeric(forest_data$HR.H)
+row.names(forest_data)<-id
+forest_data<-cbind(var=row.names(forest_data),forest_data)
+forest_data<-rbind(title=colnames(forest_data),forest_data)
+forest_data2<-forest_data
+forest_data<-forest_data[,-1]
+forest_data<-forest_data[-1,]
+library(forestplot)
+forestplot(labeltext = as.matrix(forest_data2[,1:3]),
+           #设置用于文本展示的列，此处我们用数据的前四列作为文本，在图中展示
+           mean = c(NA,forest_data[,3]), #设置均值
+           lower = c(NA,forest_data[,4]), #设置均值的lowlimits限
+           upper = c(NA,forest_data[,5]), #设置均值的uplimits限
+           is.summary=c(T,F,F,F,F,F,F,F,F,F,F,F,F,F,F,F,F,F,F,F,F,F,F,F,F,F,F,F,F,F,F,F,F,F),
+           #该参数接受一个逻辑向量，用于定义数据中每一行是否是汇总值，若是，则在对应位置设置为TRUE，若否，则设置为FALSE；设置为TRUE的行则以粗体出现
+           zero = 1, #设置参照值，此处我们展示的是HR值，故参照值是1，而不是0
+           boxsize = 0.4, #设置点估计的方形大小
+           lineheight = unit(16,'mm'),#设置图形中的行距
+           colgap = unit(8,'mm'),#设置图形中的列间距
+           lwd.zero = 2,#设置参考线的粗细
+           lwd.ci = 2,#设置区间估计线的粗细
+           col=fpColors(box='#FF0000',summary="#8B008B",lines = 'black',zero = '#7AC5CD'),
+           #使用fpColors()函数定义图形元素的颜色，从左至右分别对应点估计方形，汇总值，区间估计线，参考线
+           xlab="The estimates",#设置x轴标签
+           lwd.xaxis=2,#设置X轴线的粗细
+           lty.ci = "solid",
+           graph.pos = 4)#设置森林图的位置，此处设置为4，则出现在第四列
+
+
+
+
+
+
