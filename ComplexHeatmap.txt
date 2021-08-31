@@ -1,0 +1,44 @@
+##liupinbo_liupinbo1999@163.com
+##version：1.0.0
+
+
+BiocManager::install("ComplexHeatmap")
+library(ComplexHeatmap)
+mRNA_MUT_APM[is.na(mRNA_MUT_APM)]<-""
+a<-mRNA_MUT_APM[,1]
+mRNA_MUT_APM<-mRNA_MUT_APM[,-1]
+rownames(mRNA_MUT_APM)<-a$`Sample ID`
+col = c(AMP = "red", HOMDEL = "blue",MUT = 'green',HIGH = 'purple',LOW = 'black')
+column_title<-'Oncoplot'
+heatmap_legend_param<-list(title = 'Alternations',
+                           at = c('AMP','HOMDEL','MUT','HIGH','LOW'),
+                           labels = c('AMP','HOMDEL','MUT','HIGH','LOW'))
+oncoPrint(matrix_target_df,
+          alter_fun = list(
+            background = function(x, y, w, h) grid.rect(x, y, w, h, 
+                                                        gp = gpar(fill = "#F5F5F5")),
+            AMP = alter_graphic("rect", width = 0.9, height = 0.9, fill = col["AMP"]),
+            HOMDEL = alter_graphic("rect", width = 0.9, height = 0.9, fill = col["HOMDEL"]),
+            mutation = alter_graphic("rect", width = 0.9, height = 0.9, fill = col["mutation"])),
+           col = col,column_title = column_title,heatmap_legend_param = heatmap_legend_param,
+          remove_empty_columns = TRUE,
+          remove_empty_rows = TRUE,
+          row_names_side = 'left',
+          pct_side = 'right')
+          
+
+#LOW = alter_graphic("rect", width = 0.6, height = 0.6, fill = col["LOW"])
+alter_fun = list(
+  background = alter_graphic("rect", fill = "#CCCCCC"),   
+  HOMDEL = alter_graphic("rect", fill = col["HOMDEL"]),
+  AMP = alter_graphic("rect",fill = col["AMP"]),
+  MUT = alter_graphic("rect", fill = col["MUT"]),
+  HIGH = alter_graphic("rect", fill = col["HIGH"]),
+  LOW = alter_graphic("rect",  fill = col["LOW"])
+)
+oncoPrint(mRNA_MUT_APM,col = col,alter_fun=alter_fun,
+          column_title = column_title,heatmap_legend_param = heatmap_legend_param,
+          remove_empty_columns = TRUE,
+          remove_empty_rows = TRUE,
+          row_names_side = 'left',
+          pct_side = 'right')
