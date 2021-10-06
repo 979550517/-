@@ -1,0 +1,106 @@
+##liupinbo_liupinbo1999@163.com
+##version：1.0.0
+
+import gzip
+import logging
+import sys
+import time
+import re
+
+def log_configuration_console():
+    logging.basicConfig(
+        stream=sys.stderr,
+        level=logging.INFO,
+        format="%(asctime)s - %(filename)s - %(levelname)s: %(message)s"
+    )
+
+def read_file(x):
+    ## x为文件名
+    logging.info('正在提取文件')
+    y=0
+    o=0
+    p=0
+    SPOTline = []
+    if x.endswith('.gz'):
+        fq = gzip.open(x)
+    else:
+        fq = open(x)
+    for eachline in fq:
+        if isinstance(eachline, bytes):
+            eachline = eachline.decode('utf-8')
+        if not eachline:
+            continue
+        if y==0:
+            eachline=eachline.strip()
+            if eachline=="!platform_table_begin":
+                y=1
+            else:
+                continue
+        elif y==1:
+            if eachline.startswith('!'):
+                y=2
+            else:
+                line = eachline.split(sep="\t")
+                if len(line)>1:
+                    if p == 0:
+                        for i in line:
+                            i=i.strip()
+                            o=o+1
+                            if i == "Gene Symbol":
+                                p=1
+                                break
+                            if i == "SPOT_ID":
+                            #if len(i.split(sep="//"))>2:
+                                p=2
+                                SPOTline.append(o)
+                            else:
+                                continue
+                        if p == 0:
+                            raise Exception("文件无Gene Symbol 和 SPOT_ID")
+                else:
+                    logging.error(f"{eachline}")
+                    raise Exception("文段分割错误")
+                if p ==1:
+                    qurey=".*///.*"
+                    if re.search(qurey,line[o-1]) == None:
+                        content=line[0]+"\t"+line[o-1]
+                    else:
+                        continue
+                elif p==2:
+                    if len(SPOTline)>1:
+                        o=SPOTline[-1]
+                    if len(line[o-1].split(sep="//")) < 2:
+                        content = line[0] + "\t" + "Gene Symbol"
+                    else:
+                        symbolGeneid=re.search('[(][^,\s]*?[)],',line[o-1])
+                        if symbolGeneid==None:
+                            continue
+                        else:
+                            symbolGene=symbolGeneid.group()
+                            symbolGene=symbolGene.split(sep='(')
+                            symbolGene=symbolGene[-1]
+                            symbolGene=symbolGene.strip(',')
+                            symbolGene = symbolGene.strip(')')
+                            content = line[0]+"\t"+symbolGene
+                print(content)
+        elif y==2:
+            break
+        else:
+            raise Exception("发生严重错误")
+
+
+    logging.info('文件提取完毕')
+
+
+
+
+def main():
+    log_configuration_console()
+    logging.info("程序开始")
+    start_time=time.time()
+    filename=sys.argv[1]
+    read_file(filename)
+    end_time=time.time()
+    logging.info('程序运行所用时长：%.2f' % (end_time - start_time))
+if __name__ == '__main__':
+    main()

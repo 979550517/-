@@ -1,0 +1,126 @@
+##liupinbo_liupinbo1999@163.com
+##version：1.0.0
+
+raw_data2matrix<-function(rawdata,file2sample,out){
+  #系统配置
+  print("version: 1.0.0")
+  print("author: 刘品博/Liu_Pinbo")
+  print("e-Mail：liupinbo1999@163.com")
+  print("packages：org.Hs.eg.db/clusterProfiler/tidyverse")
+  Sys.sleep(2)
+  print("Analysis of start")
+  #加载所需要的包
+  library(org.Hs.eg.db)
+  library(clusterProfiler)
+  library(tidyverse)
+  #时间统计
+  t1=proc.time()
+  #读取原始矩阵数据
+  raw_data<-read.table(file = rawdata,sep = "\t",header = F)
+  #读取样本信息数据
+  fileId2sampleId<-read.table(file = file2sample,header = T,sep = "\t")
+  #转置原始数据矩阵
+  raw_data<-t(raw_data)
+  #将第一行基因id作为列标签
+  colnames(raw_data)<-raw_data[1,]
+  #删除第一行
+  raw_data<-raw_data[-1,]
+  #将变量转化为data.frame格式
+  fileId2sampleId<-as.data.frame(fileId2sampleId)
+  #将变量转化为data.frame格式
+  raw_data<-as.data.frame(raw_data)
+  #按照文件名合并两个文件，样本信息数据仅保留文件名，样本名，患者ID，以及是否为正常组织
+  data<-left_join(fileId2sampleId[,c("File.ID","Sample.ID","Case.ID","Sample.Type")],raw_data,by=c("File.ID"="ID"))
+  #删除无用变量，减少内存
+  rm(raw_data,fileId2sampleId)
+  #转置矩阵
+  data<-t(data)
+  #检查并剔除重复的样本
+  if(length(which(duplicated(data[which(rownames(data)=="Sample.ID"),])==TRUE[1]))!=0){
+    data<-data[,-which(duplicated(data["Sample.ID",])==TRUE[1])]
+    }else{
+    print("未发现重复样本")
+    }
+  #查看剩余样本数
+  print(paste("去除重复样本，样本数为：",length(data["Sample.ID",])))
+  #提取表达矩阵
+  expgene<-cbind(gene=rownames(data)[5:nrow(data)],data[5:nrow(data),])
+  #将样本ID作为表达矩阵列标签
+  colnames(expgene)[2:length(colnames(expgene))]<-data[2,]
+  #将基因id中的版本号剔除
+  new_name<-""
+  for (i in expgene[,"gene"]) {
+    new_name<-c(new_name,as.vector(strsplit(i,"[.]")[[1]][1]))
+  }
+  expgene<-as.data.frame(expgene)
+  expgene$gene<-new_name[2:length(new_name)]
+  #删除无用变量
+  rm(i,new_name)
+  #ENSEMBL_ID转换SYMBOL_ID
+  temp<-bitr(expgene$gene,
+             fromType = 'ENSEMBL',
+             toType = 'SYMBOL',
+             OrgDb = org.Hs.eg.db
+  ) %>%
+    left_join(expgene,by = c('ENSEMBL'='gene'))
+  #删除ENSEMBL_ID
+  temp<-temp[,-1]
+  #将表达量数据转化为数值格式
+  temp[,2:ncol(temp)]<-apply(temp[,2:ncol(temp)],2,function(x){x<-as.numeric(x)})
+  #对相同基因名的行求平均值（时间较长）
+  temp<-aggregate(temp[,2:ncol(temp)],by=list(temp$SYMBOL),mean)
+  #提取样本信息
+  temp2<-(rownames(data)[1:4])
+  meta<-data.frame(cbind(temp2,data[1:4,]))
+  #重命名样本信息列标签
+  colnames(meta)<-c("Group.1",data[2,])
+  #合并并转置样本信息及表达矩阵
+  matrixData<-data.frame(t(rbind(meta,temp)))
+  #将矩阵第一行作为列标签
+  colnames(matrixData)<-matrixData[1,]
+  #删除第一行
+  matrixData<-matrixData[-1,]
+  #删除文件ID及样本ID（行标签为样本ID）
+  matrixData<-matrixData[,-1]
+  matrixData<-matrixData[,-1]
+  #转换样本类型格式：正常样本为：Normal，癌症为：Tumor
+  matrixData$Sample.Type<-ifelse(matrixData$Sample.Type=="Solid Tissue Normal","Normal","Tumor")
+  #统计正常样本及癌症样本数量
+  print("样本信息：")
+  print(table(matrixData$Sample.Type))
+  #输出矩阵文件
+  print("########正在输出矩阵########")
+  out_dir=paste(out,"/Counts.txt",sep = "")
+  write.table(matrixData,file = out_dir,sep = "\t",col.names = T,row.names = T,quote = F)
+  print("########矩阵输出完毕########")
+  print("输出Counts文件注意行列标签对齐")
+  #准备差异分析表达文件
+  DE_data<-data.frame(t(matrixData[,3:ncol(matrixData)]))
+  #提取差异分析样本名
+  name<-colnames(DE_data)
+  #样本名转换
+  name2<-""
+  for (i in name) {
+    name2<-c(name2,gsub("[.]","-",i))
+  }
+  #替换样本名
+  colnames(DE_data)<-name2[2:length(name2)]
+  #准备差异分析样本信息数据
+  Sample_info<-data.frame(cbind(type=matrixData$Sample.Type,sampleid=rownames(matrixData)))
+  out_dir2=paste(out,"/sample_info.txt",sep = "")
+  write.table(x = Sample_info,file = out_dir2,sep = "\t",col.names = F,row.names = F,quote = F)
+  out_dir3=paste(out,"/DE_data.txt",sep = "")
+  write.table(x = DE_data,file = out_dir3,sep = "\t",col.names = T,row.names = T,quote = F)
+  #时间统计
+  t2=proc.time()
+  t=t2-t1
+  print(paste0('执行时间：',round(t[3][[1]],1),'秒'))
+  
+}
+rawdata<-"G:/湘雅/temp/temp/raw_data.txt"
+#rawdata<-"G:/湘雅/陆君5/00-原始数据/raw_data.txt"
+file2sample<-"G:/湘雅/temp/temp/gdc_sample_sheet.2021-09-29.tsv"
+#file2sample<-"G:/湘雅/陆君5/00-原始数据/gdc_sample_sheet.2021-09-26.tsv"
+out<-"G:/湘雅/temp/temp/合并矩阵"
+#out<-"G:/湘雅/陆君5/00-原始数据/temp"
+raw_data2matrix(rawdata,file2sample,out)

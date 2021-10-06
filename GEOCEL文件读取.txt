@@ -1,0 +1,124 @@
+##liupinbo_liupinbo1999@163.com
+##version：2.0.0
+
+
+read_cel<-function(DIR,TZfile,PM=FALSE){
+  t1=proc.time()
+  library(limma)
+  library(oligo)
+  library(tidyverse)
+  library(preprocessCore)
+  #BiocManager::install("pd.clariom.s.human")
+  ###读取探针转换文件（探针ID对应symbol文件）
+  TZ2symbol<-read.table(file = TZfile,sep="\t",
+                        header = T,check.name=F)
+  ###目录位置
+  dir_name<-paste(DIR,"/",sep = "")
+  ###选定目标文件
+  file_name<-list.files(dir_name,"\\.gz$")
+  ###读取合并目标文件数据
+  data.raw<-read.celfiles(filenames = file.path(dir_name,file_name))
+  ###提取表达矩阵
+  data_express<-exprs(data.raw)
+  ###提取探针数值ID与ID的对应关系
+  pinfo <- getProbeInfo(data.raw)
+  ###判断是否为PM-only矩阵
+  if(PM==FALSE){
+    ###过滤不表达的基因计算基因P值（列表：字符+P值）
+    data<-paCalls(data.raw)
+    ###提取基因P值
+    Pvalue<-data[["p"]]
+    ###判断探针行P值是否存在小于0.05的值
+    AP <- data.frame(TZ=apply(Pvalue, 1, function(x) any(x < 0.05)))
+    ###提取探针P值小于0.05的探针
+    TZ<-dplyr::filter(AP,TZ==TRUE)
+    ###合并探针名及判断值
+    TZ<-data.frame(cbind(tz=rownames(TZ),TF=TZ$TZ))
+    ###提取筛选出来的探针ID
+    name<-TZ$tz
+    ###提取探针ID对应的数值ID
+    fids <- pinfo[pinfo$man_fsetid %in% name, 1]
+    ###提取表达矩阵中对应的探针数据
+    data_express <- data_express[rownames(data_express) %in% fids, ]
+  }
+  ###减少内存
+  rm(data.raw)
+  ###提取目标探针表达矩阵中的数值ID
+  tzID<-data.frame(cbind(id=rownames(data_express),data_express))
+  ###转换探针数值ID和ID的格式为data.frame
+  pinfo<-as.data.frame(pinfo)
+  ###将探针数值ID格式转换为数值
+  tzID$id<-as.numeric(tzID$id)
+  ###提取表达矩阵中数值ID对应的ID
+  tzID2<-left_join(tzID,pinfo,by=c("id"="fid"))
+  ###表达矩阵数值ID与ID对应关系矩阵行标签设为数值ID
+  ###rownames(tzID2)<-tzID2$id
+  ###删除表达矩阵数值ID与ID对应关系矩阵中的数值ID列
+  tzID2<-tzID2[,-1]
+  ###表达矩阵数值ID与ID对应关系矩阵转换为data.frame格式
+  tzID2<-as.data.frame(tzID2)
+  ###quantiles标准化表达矩阵
+  Nordata<-try(normalize.quantiles(tzID2[,-ncol(tzID2)],copy=TRUE))
+  ###判断文件是否完成标准化（可能不需要）
+  if("try-error" %in% class(Nordata)){
+    ###合并探针ID与表达矩阵
+    data_express2<-cbind(ID=tzID2[,ncol(tzID2)],tzID2[,-ncol(tzID2)])
+  }else{
+    data_express2<-cbind(ID=tzID2[,ncol(tzID2)],Nordata)
+  }
+  ###去除重复探针，用平均值代替
+  data2<-avereps(data_express2,ID = data_express2$ID)
+  ###生成样本名空列表
+  new_name<-list()
+  ###停顿
+  Sys.sleep(2)
+  ###从文件名中提取样本名
+  for (i in colnames(data2)) {
+    new_name<-c(new_name,as.vector(strsplit(i,"_")[[1]][1]))
+  }
+  ###表达矩阵样本名替换
+  colnames(data2)<-new_name
+  ###提取表达矩阵探针ID
+  ###temp_TZ<-data.frame(TZ=rownames(data2))
+  ###数据格式转换
+  data2<-as.data.frame(data2)
+  ###探针ID转化为sybmol_ID
+  merge_Counts<-left_join(data2,TZ2symbol,by = c('ID'='ID'))
+  ###重新排布表达矩阵并去除探针ID
+  Counts2<-cbind(Gene_Symbol=merge_Counts[,"Gene Symbol"],merge_Counts[,c(-1,-ncol(merge_Counts))])
+  ###去除symbol_ID中NA值
+  Counts3 <- Counts2[complete.cases(Counts2[,1]),]
+  ###去除symbol_ID中空值
+  Counts3<-as.data.frame(Counts3)
+  index<-which(Counts3$Gene_Symbol=="")
+  if(length(index)!=0){
+    Counts3<-Counts3[-c(index),]
+  }
+  index2<-which(Counts3$Gene_Symbol=="Gene Symbol")
+  if(length(index2)!=0){
+    Counts3<-Counts3[-c(index2),]
+  }
+  ###转换格式
+  As.num<-function(x){
+    x<-as.numeric(x)
+    x<-round(x,2)
+  }
+  Counts3[,2:ncol(Counts3)]<-apply(Counts3[,2:ncol(Counts3)],2,As.num)
+  ###对symbol_ID重复值求平均
+  Counts3<-aggregate(Counts3[,2:ncol(Counts3)],by=list(Counts3$Gene_Symbol),mean)
+  ###输出目录
+  out_dir=paste(dir_name,"raw.geoCounts.xls",sep = "")
+  ###保存表达矩阵
+  write.table(Counts3,file = out_dir,sep = "\t",
+              col.names = T,row.names = F,quote = F)
+  t2=proc.time()
+  t=t2-t1
+  print(paste0('执行时间：',round(t[3][[1]],1),'秒'))
+}
+
+a<-"G:/湘雅/陆/GEO/GSE157010/CEL"
+b<-"G:/湘雅/陆/GEO/GSE157010/TZ-symbol2.xls"
+c<-"G:/湘雅/陆/GEO/temp/GSE138682"
+d<-"G:/湘雅/陆/GEO/temp/GSE138682/TZ.txt"
+read_cel(DIR = a,TZfile = b,PM = FALSE)
+
