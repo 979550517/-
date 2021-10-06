@@ -1,0 +1,76 @@
+##liupinbo_liupinbo1999@163.com
+##version：1.0.0
+
+library(GEOquery)
+Sys.setenv("VROOM_CONNECTION_SIZE"=131072*6)
+gset <- getGEO("GSE157010", GSEMatrix =TRUE, getGPL=FALSE)
+if (length(gset) > 1) idx <- grep("GPL570", attr(gset, "names")) else idx <- 1
+gset <- gset[[idx]]
+
+ex <- exprs(gset)
+
+
+############################
+###原始芯片读取#############
+############################
+BiocManager::install("oligo")
+library(oligo)
+library(tidyverse)
+dir_data<-"G:/湘雅/陆/GEO/GSE157010/CEL/"
+file_name<-list.files(dir_data,"\\.gz$")
+data.raw<-read.celfiles(filenames = file.path(dir_data,file_name))
+data_express<-exprs(data.raw)
+data<-paCalls(data.raw)
+a1<-data[["p"]]
+AP <- data.frame(TZ=apply(a1, 1, function(x) any(x < 0.05)))
+TZ<-dplyr::filter(AP,TZ==TRUE)
+TZ<-data.frame(cbind(tz=rownames(TZ),TF=TZ$TZ))
+pinfo <- getProbeInfo(data.raw)
+a<-TZ$tz
+fids <- pinfo[pinfo$man_fsetid %in% a, 1]
+data_express <- data_express[rownames(data_express) %in% fids, ]
+tzID<-data.frame(id=rownames(data_express))
+pinfo<-as.data.frame(pinfo)
+tzID$id<-as.numeric(tzID$id)
+tzID2<-left_join(tzID,pinfo,by=c("id"="fid"))
+rownames(tzID2)<-tzID2$id
+tzID2<-tzID2[,-1]
+tzID2<-as.data.frame(tzID2)
+data_express2<-cbind(tzID2,data_express)
+write.table(data_express2,file = "G:/湘雅/陆/GEO/GSE157010/GSE157010.counts",sep="\t",
+            row.names=F,col.names=T,quote=F)
+data_express2<-data_express2[,-1]
+data_express3<-quantile(data_express2)
+
+
+
+data<-read.table(file = "G:/湘雅/陆/GEO/GSE157010/GSE157010.counts",sep="\t",
+                 header =T,check.name=F)
+BiocManager::install("preprocessCore")
+library(preprocessCore)
+exp1<-data[,2:ncol(data)]
+data2<-normalize.quantiles(exp1,copy=TRUE)
+library(limma)
+data2<-avereps(data[,-1],ID = data$tzID2)
+write.table(data2,file = "G:/湘雅/陆君2/0_TCGA数据/raw.geoCounts.txt",sep = "\t",
+            col.names = T,row.names = T,quote = F)
+
+TZ2symbol<-read.table(file = "G:/湘雅/陆/GEO/GSE157010/TZ-symbol2.xls",sep="\t",
+                      header = T,check.name=F)
+Counts<-read.table(file = "G:/湘雅/陆/GEO/GSE157010/CEL/raw.geoCounts.xls",sep="\t",
+                   header = T,check.name=F)
+aname<-"Gene Symbol"
+merge_Counts<-left_join(Counts,TZ2symbol,by = c('TZ'='ID'))
+Counts2<-cbind(Gene_Symbol=merge_Counts[,"Gene Symbol"],merge_Counts[,c(-1,-ncol(merge_Counts))])
+Counts3 <- Counts2[complete.cases(Counts2[,1]),]
+index<-which(Counts3$Gene_Symbol=="")
+Counts3<-Counts3[-c(index),]
+Counts3<-aggregate(Counts3[,2:ncol(Counts3)],by=list(Counts3$Gene_Symbol),mean)
+
+par(mfrow=c(2,2))
+MAplot(data.raw[,1:20],pairs=FALSE)
+
+
+express_data<-data.raw@assayData$exprs
+head(express_data)
+data<-paCalls(express_data)

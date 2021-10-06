@@ -1,0 +1,239 @@
+##liupinbo_liupinbo1999@163.com
+##version：1.0.0
+
+#差异分析
+##TCGA-FPKM矩阵ensenble_id转化为symbol_id
+##TCGA-Counts矩阵ensenble_id转化为symbol_id
+###数据：G:/湘雅/陆君2/0_TCGA数据/raw_FPKM_matrix.xls
+'''
+counts<-read.table(file = "G:/湘雅/陆君2/0_TCGA数据/raw_counts_matrix.xls",
+                 sep="\t",header=T,check.name=F)
+tcga<-read.table(file = "G:/湘雅/陆君2/0_TCGA数据/raw_FPKM_matrix.xls",
+                 header = T,check.names = F,sep = "\t")
+'''
+###包：
+'''
+library(tidyverse)
+library(org.Hs.eg.db)
+library(clusterProfiler)
+'''
+columns(org.Hs.eg.db)
+tcga_symbol<-bitr(tcga$gene,
+           fromType = 'ENSEMBL',
+           toType = 'SYMBOL',
+           OrgDb = org.Hs.eg.db) %>%
+  left_join(tcga,by = c('ENSEMBL'='gene')) %>%
+  distinct(SYMBOL,.keep_all = TRUE)
+tcga_symbol<-tcga_symbol[,-1]
+
+counts_symbol<-bitr(counts$id,
+                  fromType = 'ENSEMBL',
+                  toType = 'SYMBOL',
+                  OrgDb = org.Hs.eg.db) %>%
+  left_join(counts,by = c('ENSEMBL'='id')) %>%
+  distinct(SYMBOL,.keep_all = TRUE)
+counts_symbol<-counts_symbol[,-1]
+###symbol_id存储位置
+'''
+write.table(tcga_symbol,file = "G:/湘雅/陆君2/0_TCGA数据/symbol_FPKM_matrix.xls",
+            sep = "\t",col.names = T,quote = F,row.names = F)
+write.table(counts_symbol,file = "G:/湘雅/陆君2/0_TCGA数据/symbol_Counts_matrix.xls",
+            sep = "\t",col.names = T,quote = F,row.names = F)
+'''
+##提取差异分析基因中的代谢基因
+###代谢基因路径：G:/湘雅/陆君2/1_KEGG代谢基因筛选/代谢基因.txt
+###DESeq2路径：G:湘雅/陆君2/02_差异分析/DESeq2/symbol_matrix.xls.cancer_vs_normal.DESeq2.DE_results
+###edgeR路径：G:/湘雅/陆君2/02_差异分析/edgeR/symbol_matrix.xls.cancer_vs_normal.edgeR.DE_results
+###limma路径：G:/湘雅/陆君2/02_差异分析/voom/symbol_matrix.xls.cancer_vs_normal.voom.DE_results
+'''
+deseq<-read.table(file = "G:/湘雅/陆君2/02_差异分析/DESeq2/symbol_matrix.xls.cancer_vs_normal.DESeq2.DE_results",
+                  sep="\t",header = T,check.names = F,row.names = 1)
+edger<-read.table(file = "G:/湘雅/陆君2/02_差异分析/edgeR/symbol_matrix.xls.cancer_vs_normal.edgeR.DE_results",
+                  sep="\t",header = T,check.names = F,row.names = 1)
+limma<-read.table(file = "G:/湘雅/陆君2/02_差异分析/voom/symbol_matrix.xls.cancer_vs_normal.voom.DE_results",
+                  sep="\t",header = T,check.names = F,row.names = 1)
+metabolismGene<-read.table(file = "G:/湘雅/陆君2/1_KEGG代谢基因筛选/代谢基因.txt",
+                           header = F,sep="\t")
+'''
+demetabolismGene<-intersect(rownames(deseq),metabolismGene$V1)
+metabolism_deseq<-deseq[demetabolismGene,]
+
+edgermetabolismGene<-intersect(rownames(edger),metabolismGene$V1)
+metabolism_edger<-edger[edgermetabolismGene,]
+
+limmametabolismGene<-intersect(rownames(limma),metabolismGene$V1)
+metabolism_limma<-limma[limmametabolismGene,]
+###代谢基因差异分析结果路径：G:/湘雅/陆君2/02_差异分析
+'''
+write.table(metabolism_deseq,file = "G:/湘雅/陆君2/02_差异分析/DEseq_代谢基因结果.xls",
+            sep = "\t",quote = F,row.names = T,col.names = T)
+write.table(metabolism_edger,file = "G:/湘雅/陆君2/02_差异分析/edgeR_代谢基因结果.xls",
+            sep = "\t",quote = F,row.names = T,col.names = T)
+write.table(metabolism_limma,file = "G:/湘雅/陆君2/02_差异分析/limma_代谢基因结果.xls",
+            sep = "\t",quote = F,row.names = T,col.names = T)
+'''
+###代谢基因火山图
+###文件路径：G:/湘雅/陆君2/02_差异分析
+'''
+metabolism_deseq<-read.table(file = "G:/湘雅/陆君2/02_差异分析/DEseq_代谢基因结果.xls",
+            sep = "\t",header = T,row.names = 1,check.names = F)
+metabolism_edger<-read.table(file = "G:/湘雅/陆君2/02_差异分析/edgeR_代谢基因结果.xls",
+                             sep = "\t",header = T,row.names = 1,check.names = F)
+metabolism_limma<-read.table(file = "G:/湘雅/陆君2/02_差异分析/limma_代谢基因结果.xls",
+                             sep = "\t",header = T,row.names = 1,check.names = F)
+'''
+###包
+'''
+library(EnhancedVolcano)
+'''
+EnhancedVolcano(metabolism_deseq,lab = rownames(metabolism_deseq),x = 'log2FoldChange',y = 'padj',
+                xlab = 'DEseq2',ylab = NULL,pCutoff = 0.05,FCcutoff = 2,selectLab=F)
+EnhancedVolcano(metabolism_edger,lab = rownames(metabolism_edger),x = 'logFC',y = 'FDR',
+                xlab = 'EdgeR',ylab = NULL,pCutoff = 0.05,FCcutoff = 2,selectLab=F)
+EnhancedVolcano(metabolism_limma,lab = rownames(metabolism_limma),x = 'logFC',y = 'FDR',
+                xlab = 'Limma',ylab = NULL,pCutoff = 0.05,FCcutoff = 2,selectLab=F)
+##提取上下调基因
+###文件路径：G:/湘雅/陆君2/02_差异分析
+'''
+metabolism_deseq<-read.table(file = "G:/湘雅/陆君2/02_差异分析/代谢差异基因/DEseq_代谢基因结果.xls",
+            sep = "\t",header = T,row.names = 1,check.names = F)
+metabolism_edger<-read.table(file = "G:/湘雅/陆君2/02_差异分析/代谢差异基因/edgeR_代谢基因结果.xls",
+                             sep = "\t",header = T,row.names = 1,check.names = F)
+metabolism_limma<-read.table(file = "G:/湘雅/陆君2/02_差异分析/代谢差异基因/limma_代谢基因结果.xls",
+                             sep = "\t",header = T,row.names = 1,check.names = F)
+'''
+up_deseq<- dplyr::filter(metabolism_deseq,log2FoldChange > 2 & padj < 0.05)
+up_deseq<-cbind(up_deseq,change=rep("up",length(up_deseq$sampleA)))
+down_deseq<- dplyr::filter(metabolism_deseq,log2FoldChange < -2 & padj < 0.05)
+down_deseq<-cbind(down_deseq,change=rep("down",length(down_deseq$sampleA)))
+deseq_change<-rbind(down_deseq,up_deseq)
+
+up_edger<- dplyr::filter(metabolism_edger,logFC > 2 & FDR < 0.05)
+up_edger<-cbind(up_edger,change=rep("up",length(up_edger$sampleA)))
+down_edger<- dplyr::filter(metabolism_edger,logFC < -2 & FDR < 0.05)
+down_edger<-cbind(down_edger,change=rep("down",length(down_edger$sampleA)))
+edger_change<-rbind(down_edger,up_edger)
+
+up_limma<- dplyr::filter(metabolism_limma,logFC > 2 & FDR < 0.05)
+up_limma<-cbind(up_limma,change=rep("up",length(up_limma$sampleA)))
+down_limma<- dplyr::filter(metabolism_limma,logFC < -2 & FDR < 0.05)
+down_limma<-cbind(down_limma,change=rep("down",length(down_limma$sampleA)))
+limma_change<-rbind(down_limma,up_limma)
+###上下调基因存储路径：G:/湘雅/陆君2/02_差异分析/差异基因
+'''
+write.table(up_deseq,file = "G:/湘雅/陆君2/02_差异分析/上下调代谢差异基因/DEseq2/上调基因.xls",
+            sep = "\t",quote = F,col.names = T,row.names = T)
+write.table(down_deseq,file = "G:/湘雅/陆君2/02_差异分析/上下调代谢差异基因/DEseq2/下调基因.xls",
+            sep = "\t",quote = F,col.names = T,row.names = T)
+write.table(deseq_change,file = "G:/湘雅/陆君2/02_差异分析/上下调代谢差异基因/DEseq2/上下调基因.xls",
+            sep = "\t",quote = F,col.names = T,row.names = T)
+
+write.table(up_edger,file = "G:/湘雅/陆君2/02_差异分析/上下调代谢差异基因/EdgeR/EdgeR上调基因.xls",
+            sep = "\t",quote = F,col.names = T,row.names = T)
+write.table(down_edger,file = "G:/湘雅/陆君2/02_差异分析/上下调代谢差异基因/EdgeR/EdgeR下调基因.xls",
+            sep = "\t",quote = F,col.names = T,row.names = T)
+write.table(edger_change,file = "G:/湘雅/陆君2/02_差异分析/上下调代谢差异基因/EdgeR/EdgeR上下调基因.xls",
+            sep = "\t",quote = F,col.names = T,row.names = T)
+
+write.table(up_limma,file = "G:/湘雅/陆君2/02_差异分析/上下调代谢差异基因/Limma/Limma上调基因.xls",
+            sep = "\t",quote = F,col.names = T,row.names = T)
+write.table(down_limma,file = "G:/湘雅/陆君2/02_差异分析/上下调代谢差异基因/Limma/Limma下调基因.xls",
+            sep = "\t",quote = F,col.names = T,row.names = T)
+write.table(limma_change,file = "G:/湘雅/陆君2/02_差异分析/上下调代谢差异基因/Limma/Limma上下调基因.xls",
+            sep = "\t",quote = F,col.names = T,row.names = T)
+'''
+##绘制上下调基因热图
+###上下调基因文件位置：G:/湘雅/陆君2/02_差异分析/上下调代谢差异基因
+###Counts表达文件位置：G:/湘雅/陆君2/0_TCGA数据/raw_counts_matrix.xls
+###样本信息位置：G:/湘雅/陆君2/0_TCGA数据/sample_information.txt
+'''
+deseq_change<-read.table(file = "G:/湘雅/陆君2/02_差异分析/上下调代谢差异基因/DEseq2/DEseq2上下调基因.xls",
+                         sep="\t",header=T,row.names=1,check.name=F)
+edger_change<-read.table(file = "G:/湘雅/陆君2/02_差异分析/上下调代谢差异基因/EdgeR/EdgeR上下调基因.xls",
+                         sep="\t",header=T,row.names=1,check.name=F)
+limma_change<-read.table(file = "G:/湘雅/陆君2/02_差异分析/上下调代谢差异基因/Limma/Limma上下调基因.xls",
+                         sep="\t",header=T,row.names=1,check.name=F)
+counts<-read.table(file = "G:/湘雅/陆君2/0_TCGA数据/symbol_Counts_matrix.xls",
+                 sep="\t",header=T,row.names=1,check.name=F)
+sample_info<-read.table(file = "G:/湘雅/陆君2/0_TCGA数据/sample_information.txt",
+                 sep="\t",header=F,check.name=F)
+'''
+###包：
+'''
+library(pheatmap)
+'''
+sample_info<-data.frame(t(sample_info))
+colnames(sample_info)<-sample_info[2,]
+sample_info<-sample_info[-2,]
+counts<-rbind(sample_info,counts)
+counts<-counts[,order(counts[1,])]
+ann<-t(counts[1,])
+ann<-as.data.frame(ann)
+colnames(ann)<-"tissue"
+deseq_gene<-rownames(deseq_change)
+deseq_counts<-counts[c("V1",deseq_gene),]
+deseq_counts=apply(deseq_counts[2:nrow(deseq_counts),],2,as.numeric)
+row.names(deseq_counts)<-deseq_gene
+deseq_counts<-as.data.frame(deseq_counts)
+
+edger_gene<-rownames(edger_change)
+edger_counts<-counts[c("V1",edger_gene),]
+edger_counts=apply(edger_counts[2:nrow(edger_counts),],2,as.numeric)
+row.names(edger_counts)<-edger_gene
+edger_counts<-as.data.frame(edger_counts)
+
+limma_gene<-rownames(limma_change)
+limma_counts<-counts[c("V1",limma_gene),]
+limma_counts=apply(limma_counts[2:nrow(limma_counts),],2,as.numeric)
+row.names(limma_counts)<-limma_gene
+limma_counts<-as.data.frame(limma_counts)
+
+pheatmap::pheatmap(log2(deseq_counts+1),annotation_col = ann,cluster_cols = FALSE,
+                   show_colnames = F,show_rownames = F,
+                   main	="DEseq2")
+pheatmap::pheatmap(log2(edger_counts+1),annotation_col = ann,cluster_cols = FALSE,
+                   show_colnames = F,show_rownames = F,
+                   main="EdgeR")
+pheatmap::pheatmap(log2(limma_counts+1),annotation_col = ann,cluster_cols = FALSE,
+                   show_colnames = F,show_rownames = F,
+                   main="Limma")
+##提取上下调共有基因及绘制上调基因和下调基因的韦恩图
+###上下调基因位置
+'''
+deseq_up<-read.table(file = "G:/湘雅/陆君2/02_差异分析/上下调代谢差异基因/DEseq2/DEseq2上调基因.xls",
+                         sep="\t",header=T,row.names=1,check.name=F)
+edger_up<-read.table(file = "G:/湘雅/陆君2/02_差异分析/上下调代谢差异基因/EdgeR/EdgeR上调基因.xls",
+                         sep="\t",header=T,row.names=1,check.name=F)
+limma_up<-read.table(file = "G:/湘雅/陆君2/02_差异分析/上下调代谢差异基因/Limma/Limma上调基因.xls",
+                         sep="\t",header=T,row.names=1,check.name=F)
+deseq_down<-read.table(file = "G:/湘雅/陆君2/02_差异分析/上下调代谢差异基因/DEseq2/DEseq2下调基因.xls",
+                         sep="\t",header=T,row.names=1,check.name=F)
+edger_down<-read.table(file = "G:/湘雅/陆君2/02_差异分析/上下调代谢差异基因/EdgeR/EdgeR下调基因.xls",
+                         sep="\t",header=T,row.names=1,check.name=F)
+limma_down<-read.table(file = "G:/湘雅/陆君2/02_差异分析/上下调代谢差异基因/Limma/Limma下调基因.xls",
+                         sep="\t",header=T,row.names=1,check.name=F)
+'''
+###包：
+'''
+install.packages("ggvenn")
+library(ggvenn)
+'''
+co_upGene<-data.frame(gene=intersect(intersect(rownames(deseq_up),rownames(edger_up)),rownames(limma_up)))
+co_downGene<-data.frame(gene=intersect(intersect(rownames(deseq_down),rownames(edger_down)),rownames(limma_down)))
+up_gene<-list(DEseq2_UP=rownames(deseq_up),EdgeR_UP=rownames(edger_up),Limma_UP=rownames(limma_up))
+ggvenn(up_gene,c("DEseq2_UP","EdgeR_UP","Limma_UP"),fill_color = c("LightPink","Gold","LightGreen"),
+       fill_alpha = 0.5,stroke_color = "white",stroke_alpha = 1,
+       set_name_color = c("LightPink","Gold","LightGreen"),show_percentage = F,
+       text_size = 5)
+down_gene<-list(DEseq2_DOWN=rownames(deseq_down),EdgeR_DOWN=rownames(edger_down),Limma_DOWN=rownames(limma_down))
+ggvenn(down_gene,c("DEseq2_DOWN","EdgeR_DOWN","Limma_DOWN"),fill_color = c("LightPink","Gold","LightGreen"),
+       fill_alpha = 0.5,stroke_color = "white",stroke_alpha = 1,
+       set_name_color = c("LightPink","Gold","LightGreen"),show_percentage = F,
+       text_size = 5)
+###共有上下调基因存储位置
+'''
+write.table(co_upGene,file = "G:/湘雅/陆君2/02_差异分析/共有上调基因.xls",
+            sep = "\t",quote = F,col.names = T,row.names = F)
+write.table(co_downGene,file = "G:/湘雅/陆君2/02_差异分析/共有下调基因.xls",
+            sep = "\t",quote = F,col.names = T,row.names = F)
+'''
