@@ -1,0 +1,31 @@
+install.packages("statnet")
+##liupinbo_liupinbo1999@163.com
+##version：1.0.0
+
+install.packages("circlize")
+library(statnet)
+library(circlize)
+color<-c("OldLace","PeachPuff","LemonChiffon","Seashell","Honeydew","MintCream","Azure","AliceBlue","lavender","lavender","LavenderBlush","MistyRose","Tan2","DarkSeaGreen1","Violet","Thistle1")
+color<-c("SlateBlue","RoyalBlue","CadetBlue","goldenrod","IndianRed","IndianRed","Salmon","Maroon","DarkOrchid","SlateBlue2","LightGreen","DarkRed","DarkMagenta","DarkCyan","DarkBlue","DarkBlue")
+data<-read.table(file = "G:/Rstudio_work/transcriptome/result/KEGG.xls",sep = "\t",header = T,check.names = F)
+colnames(data)
+line<-c(data[1,"ID"],strsplit(data[1,"geneID"],"/")[[1]])
+matrix<-cbind(GO=rep(line[1],length(line)-1),gene=line[2:length(line)],counts=rep(data$Count[1],length(line[2:length(line)])))
+grid.col = NULL
+grid.col[line[1]] = c(color[1])
+grid.col[line[2:length(line)]] = "black"
+matrix<-as.data.frame(matrix)
+for (i in 2:length(rownames(data))) {
+  print(i)
+  line2<-c(data[i,"ID"],strsplit(data[i,"geneID"],"/")[[1]])
+  matrix2<-cbind(GO=rep(line2[1],length(line2)-1),gene=line2[2:length(line2)],counts=rep(data$Count[i],length(line2[2:length(line2)])))
+  grid.col[line2[1]] = c(color[i])
+  grid.col[line2[2:length(line2)]] = "black"
+  matrix2<-as.data.frame(matrix2)
+  matrix<-rbind(matrix,matrix2)
+}
+rm(i,matrix2)
+circos.par(gap.degree = 1,start.degree = 180)
+chordDiagram(matrix,directional = TRUE,diffHeight = 0.06,transparency = 0.8,grid.col = grid.col)
+circos.clear()
+
