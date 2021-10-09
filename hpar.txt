@@ -1,0 +1,42 @@
+##liupinbo_liupinbo1999@163.com
+##version：1.0.0
+
+hpA<-function(cox_gene){
+  #系统配置
+  print("version: 1.0.0")
+  print("author: 刘品博/Liu_Pinbo")
+  print("e-Mail：liupinbo1999@163.com")
+  print("packages：org.Hs.eg.db/clusterProfiler/tidyverse")
+  Sys.sleep(2)
+  print("Analysis of start")
+  #加载所需要的包
+#BiocManager::install("hpar")
+library(hpar)
+library(tidyverse)
+library(clusterProfiler)
+library(org.Hs.eg.db)
+path<-bitr(cox_gene,
+           fromType = 'SYMBOL',
+           toType = 'ENSEMBL',
+           OrgDb = org.Hs.eg.db
+)
+
+hpa<-function(x){
+print(getHpa(x,hpadata = "hpaCancer")[getHpa(x,hpadata = "hpaCancer")$`Cancer`=="breast cancer",c("Gene","High","Medium","Low")])
+}
+capt<-""
+for (i in path$ENSEMBL) {
+  capt<-c(capt,capture.output(hpa(i)))
+}
+capt<-capt[-1]
+HPA<-data.frame()
+for (i in seq(from=2,to=length(capt),by=2)) {
+  a<-strsplit(capt[i],split =" ")[[1]]
+  a<-a[-which(a=="")]
+  HPA<-rbind(HPA,a)
+}
+colnames(HPA)<-c("ENTREZID","ENSEMBL","High","Medium","Low")
+HPA<-left_join(HPA,path,by="ENSEMBL")
+return(HPA)
+}
+HPA<-hpA(cox_gene)
