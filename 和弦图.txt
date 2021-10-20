@@ -1,31 +1,44 @@
 install.packages("statnet")
 ##liupinbo_liupinbo1999@163.com
-##version：1.0.0
+##version：2.0.0
 
+install.packages("statnet")
 install.packages("circlize")
 library(statnet)
 library(circlize)
 color<-c("OldLace","PeachPuff","LemonChiffon","Seashell","Honeydew","MintCream","Azure","AliceBlue","lavender","lavender","LavenderBlush","MistyRose","Tan2","DarkSeaGreen1","Violet","Thistle1")
 color<-c("SlateBlue","RoyalBlue","CadetBlue","goldenrod","IndianRed","IndianRed","Salmon","Maroon","DarkOrchid","SlateBlue2","LightGreen","DarkRed","DarkMagenta","DarkCyan","DarkBlue","DarkBlue")
-data<-read.table(file = "G:/Rstudio_work/transcriptome/result/KEGG.xls",sep = "\t",header = T,check.names = F)
+data<-read.table(file = "E:/乳腺癌富集/down_kegg.xls",sep = "\t",header = T,check.names = F)
 colnames(data)
 line<-c(data[1,"ID"],strsplit(data[1,"geneID"],"/")[[1]])
 matrix<-cbind(GO=rep(line[1],length(line)-1),gene=line[2:length(line)],counts=rep(data$Count[1],length(line[2:length(line)])))
 grid.col = NULL
 grid.col[line[1]] = c(color[1])
-grid.col[line[2:length(line)]] = "black"
+grid.col[line[2:length(line)]] = "gray"
 matrix<-as.data.frame(matrix)
 for (i in 2:length(rownames(data))) {
   print(i)
   line2<-c(data[i,"ID"],strsplit(data[i,"geneID"],"/")[[1]])
   matrix2<-cbind(GO=rep(line2[1],length(line2)-1),gene=line2[2:length(line2)],counts=rep(data$Count[i],length(line2[2:length(line2)])))
   grid.col[line2[1]] = c(color[i])
-  grid.col[line2[2:length(line2)]] = "black"
+  grid.col[line2[2:length(line2)]] = "gray"
   matrix2<-as.data.frame(matrix2)
   matrix<-rbind(matrix,matrix2)
 }
 rm(i,matrix2)
 circos.par(gap.degree = 1,start.degree = 180)
-chordDiagram(matrix,directional = TRUE,diffHeight = 0.06,transparency = 0.8,grid.col = grid.col)
+#chordDiagram(matrix,directional = TRUE,diffHeight = 0.06,transparency = 0.8,grid.col = grid.col)
+#chordDiagram(matrix, annotationTrack = "grid",grid.col = grid.col)
+png(filename = "E:/乳腺癌富集/down_kegg.png",width=900,height	=900,res=120)
+chordDiagram(matrix, grid.col = grid.col, annotationTrack = "grid", 
+             preAllocateTracks = list(track.height = max(strwidth(unlist(dimnames(matrix))))))
+# we go back to the first track and customize sector labels
+circos.track(track.index = 1,panel.fun = function(x, y) {
+circos.text(CELL_META$xcenter, CELL_META$ylim[1], CELL_META$sector.index, 
+            cex=0.65,facing = "clockwise", niceFacing = TRUE, adj = c(0, 0.5))
+}, bg.border = NA) # here set bg.border to NA is important
+dev.off()
 circos.clear()
+
+
 
